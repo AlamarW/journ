@@ -1,2 +1,11 @@
 ## About the Project
-journaling_app is a hobby project with the attempt at localizing the key functionality fo the website 750words.com with a few added features, including user set word goals.
+journ, the journaling app, started as a project to mimic much of the functionality of the website 750words.com but to make the data local for the users instead of in a cloud. It started to feel weird to me with how much personal stuff I was journaling with on a site with a backend that was not in my control, even considering the seemingly good intentions of the small team working on it.
+
+Since conception of the project, I've deviated a bit from the clone of 750words.com goal and am dedicating myself to a "fully featured" journaling app in the terminal. 
+
+### Progress
+- [x] Functioning text editor for journaling
+  - [] Text wrap on editor is critical
+- [] User login
+  - [] User goals
+- [] Days journaled streak
