@@ -8,4 +8,4 @@ Since conception of the project, I've deviated a bit from the clone of 750words.
   - [] Text wrap on editor is critical
 - [] User login
   - [] User goals
-- [] Days journaled streak
+- [] Journaling streak
