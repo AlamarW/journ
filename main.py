@@ -1,9 +1,41 @@
 #!/usr/bin/python3
 
 import cmd
+import sqlite3
 from tui_editor import TuiEditor 
 from datetime import datetime
 from os import system, name
+
+conn = sqlite3.connect('journal.db')
+cursor = conn.cursor()
+cursor.execute("""CREATE TABLE user_info (
+                user_id integer,
+                writing_goal integer,
+                )""")
+
+conn.commit()
+conn.close()
+
+class User:
+    
+    def __init__(self, user_id, password, writing_goal):
+        self.user_id = user_id
+        self.password = password 
+        self.writing_goal = writing_goal
+
+
+class JournalSession:
+
+    def __init__(self, session_id, journ_text, words_per_minute, accomplished_writing_goal, date):
+        self.session_id = session_id
+        self.journ_text = journal_text
+        self.words_per_minute = words_per_minute
+        self.accomplished_writing_goal = accomplished_writing_goal
+        self.date = date 
+
+
+
+
 
 class JournalingShell(cmd.Cmd):
     intro = "Welcome to Journaling Shell. Type help or ? to list commands.\nType `journ` to start!\nNote: if you haven't logged in, your journ won't be saved. \n"
