@@ -6,15 +6,28 @@ from tui_editor import TuiEditor
 from datetime import datetime
 from os import system, name
 
-#conn = sqlite3.connect('journal.db')
-#cursor = conn.cursor()
-#cursor.execute("""CREATE TABLE user_info (
-#                user_id integer,
-#                writing_goal integer
-#                )""")
+conn = sqlite3.connect('journal.db')
+cursor = conn.cursor()
+cursor.execute("""CREATE TABLE IF NOT EXISTS user_info (
+                user_id integer,
+                password text,
+                writing_goal integer
+                )""")
 
-#conn.commit()
-#conn.close()
+conn.commit()
+
+cursor.execute("""CREATE TABLE IF NOT EXISTS journal_session (
+               session_id integer,
+               journal_text blob,
+               words_per_minute real,
+               date test,
+               accomplished_writing_goal 
+               )""")
+
+conn.commit()
+
+
+
 
 class User:
     
@@ -45,16 +58,55 @@ class JournalSession:
 class JournalingShell(cmd.Cmd):
     intro = "Welcome to Journaling Shell. Type help or ? to list commands.\nType `journ` to start!\nNote: if you haven't logged in, your journ won't be saved. \n"
     prompt = '(journ) '
-    file = None
+    writing_goal = 0
+    name = None
 
     def do_login(self,line):
-        "Login here"
+        "Register and Login here!"
         #registration function needs to go here
-        user_name = input("User name: ")
-        password = input("password: ")
+        def confirm_login():
+            def login():
+                """Ask user for user name, check it against database"""
+                user_name = input("What is your user name? ")
+                user_data = cursor.execute("SELECT user_id, password, writing_goal FROM user_info WHERE user_id = ?",[user_name])
+                user_data_grab = user_data.fetchone()
+                password_actual = user_data_grab[1]
+                password_attempt = input("What is your password? ")
+                if password_actual == password_attempt:
+                    JournalingShell.name = user_name
+                    JournalingShell.writing_goal = user_data_grab[2]
+                else:
+                    print("invalid password")
+                    login()
 
-        user = User(user_name, password, 23)
-        user.register()
+                return print("logged in")
+            def register():
+                user_name = input("choose your username ")
+                password = input("Choose your password ")
+                writing_goal = input("Write your daily writing goal (Using digits only)")
+                cursor.execute("INSERT INTO user_info VALUES (?, ? , ?)", [user_name, password, int(writing_goal)])
+                conn.commit()
+                print("Now log in to the system")
+                login()
+
+            has_registered = input("Have you set up a user name and password?(y/n)")
+            
+            if has_registered.lower() == "y":
+                login()
+
+            elif has_registered.lower() == "n":
+                print("not registered")
+                register()
+            else:
+                print("input has to be either y or no")
+                confirm_login()
+                
+        confirm_login()           
+        #user_name = input("User name: ")
+        #password = input("password: ")
+
+        #user = User(user_name, password, 23)
+        #user.register()
 
 
     def user_info(user_name):
@@ -91,6 +143,12 @@ class JournalingShell(cmd.Cmd):
     def streak_details(self, user_name, login):
         raise NotImplementedError
 
+    def do_test(self, line):
+       "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
+       cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+       print(cursor.fetchall())
+       conn.commit() 
+
     def save_journal(self, args):
         raise NotImplementedError
 
@@ -106,3 +164,4 @@ class JournalingShell(cmd.Cmd):
 if __name__ == '__main__':
     JournalingShell.clear()
     JournalingShell().cmdloop()
+    conn.close()
