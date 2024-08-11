@@ -6,15 +6,15 @@ from tui_editor import TuiEditor
 from datetime import datetime
 from os import system, name
 
-conn = sqlite3.connect('journal.db')
-cursor = conn.cursor()
-cursor.execute("""CREATE TABLE user_info (
-                user_id integer,
-                writing_goal integer,
-                )""")
+#conn = sqlite3.connect('journal.db')
+#cursor = conn.cursor()
+#cursor.execute("""CREATE TABLE user_info (
+#                user_id integer,
+#                writing_goal integer
+#                )""")
 
-conn.commit()
-conn.close()
+#conn.commit()
+#conn.close()
 
 class User:
     
@@ -22,6 +22,11 @@ class User:
         self.user_id = user_id
         self.password = password 
         self.writing_goal = writing_goal
+
+    def register(self):
+        print(self.user_id)
+        print(self.password)
+
 
 
 class JournalSession:
@@ -42,8 +47,15 @@ class JournalingShell(cmd.Cmd):
     prompt = '(journ) '
     file = None
 
-    def user_login(self, user_name, password):
-        raise NotImplementedError
+    def do_login(self,line):
+        "Login here"
+        #registration function needs to go here
+        user_name = input("User name: ")
+        password = input("password: ")
+
+        user = User(user_name, password, 23)
+        user.register()
+
 
     def user_info(user_name):
         return True
