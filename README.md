@@ -3,9 +3,12 @@ journ, the journaling app, started as a project to mimic much of the functionali
 
 Since conception of the project, I've deviated a bit from the clone of 750words.com goal and am dedicating myself to a "fully featured" journaling app in the terminal. 
 
-### Progress
-- [x] Functioning text editor for journaling
+### To Do List . 
+
+
   - [] Text wrap on editor is critical
+
 - [] User login
-  - [] User goals
+  - [X] User goals
 - [] Journaling streak
+

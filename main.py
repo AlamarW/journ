@@ -26,9 +26,6 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS journal_session (
 
 conn.commit()
 
-
-
-
 class User:
     
     def __init__(self, user_id, password, writing_goal):
@@ -40,20 +37,14 @@ class User:
         print(self.user_id)
         print(self.password)
 
-
-
 class JournalSession:
 
     def __init__(self, session_id, journ_text, words_per_minute, accomplished_writing_goal, date):
         self.session_id = session_id
-        self.journ_text = journal_text
+        self.journ_text = journ_text
         self.words_per_minute = words_per_minute
         self.accomplished_writing_goal = accomplished_writing_goal
         self.date = date 
-
-
-
-
 
 class JournalingShell(cmd.Cmd):
     intro = "Welcome to Journaling Shell. Type help or ? to list commands.\nType `journ` to start!\nNote: if you haven't logged in, your journ won't be saved. \n"
@@ -83,13 +74,13 @@ class JournalingShell(cmd.Cmd):
             def register():
                 user_name = input("choose your username ")
                 password = input("Choose your password ")
-                writing_goal = input("Write your daily writing goal (Using digits only)")
+                writing_goal = input("Write your daily writing goal (Using digits only) ")
                 cursor.execute("INSERT INTO user_info VALUES (?, ? , ?)", [user_name, password, int(writing_goal)])
                 conn.commit()
                 print("Now log in to the system")
                 login()
 
-            has_registered = input("Have you set up a user name and password?(y/n)")
+            has_registered = input("Have you set up a user name and password?(y/n) ")
             
             if has_registered.lower() == "y":
                 login()
@@ -143,6 +134,7 @@ class JournalingShell(cmd.Cmd):
     def streak_details(self, user_name, login):
         raise NotImplementedError
 
+       
     def do_test(self, line):
        "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
