@@ -5,6 +5,7 @@ import sqlite3
 from tui_editor import TuiEditor 
 from datetime import datetime
 from os import system, name
+import uuid
 
 conn = sqlite3.connect('journal.db')
 cursor = conn.cursor()
@@ -44,7 +45,7 @@ class JournalSession:
         self.journ_text = journ_text
         self.words_per_minute = words_per_minute
         self.accomplished_writing_goal = accomplished_writing_goal
-        self.date = date 
+        self.date = date
 
 class JournalingShell(cmd.Cmd):
     intro = "Welcome to Journaling Shell. Type help or ? to list commands.\nType `journ` to start!\nNote: if you haven't logged in, your journ won't be saved. \n"
@@ -125,11 +126,20 @@ class JournalingShell(cmd.Cmd):
         end_time = datetime.now()
 
         elapsed_time = end_time - start_time
-        
+        in_seconds = elapsed_time.total_seconds() 
+        in_minutes = in_seconds/60
         time_string = str(elapsed_time)
 
         parsed_time = time_string.split(":")
         print(f"You've journalled for {parsed_time[0]} hour(s), {parsed_time[1]} minute(s), and {parsed_time[2][:2]} seconds")
+        journ_wpm = round(journal_length / in_minutes, 1) 
+        JournalSession.session_id = start_time
+        JournalSession.journ_text = contents
+        JournalSession.words_per_minute = journ_wpm
+        JournalSession.date = end_time
+        cursor.execute("INSERT INTO journal_session VALUES (?, ? , ?, ?, ?)", [JournalSession.session_id, JournalSession.journ_text, JournalSession.words_per_minute,JournalSession.date,True])
+        conn.commit()
+ 
 
     def streak_details(self, user_name, login):
         raise NotImplementedError
@@ -139,7 +149,10 @@ class JournalingShell(cmd.Cmd):
        "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
        print(cursor.fetchall())
-       conn.commit() 
+       conn.commit()
+       cursor.execute("SELECT * FROM journal_session")
+       print(cursor.fetchall())
+       conn.commit()
 
     def save_journal(self, args):
         raise NotImplementedError
