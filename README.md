@@ -6,9 +6,9 @@ Since conception of the project, I've deviated a bit from the clone of 750words.
 ### To Do List . 
 
 
-  - [] Text wrap on editor is critical
-
+- [] Text wrap
 - [] User login
-  - [X] User goals
+  - [x] Journal Session logging 
+  - [] User goals fully implemented
 - [] Journaling streak
 
