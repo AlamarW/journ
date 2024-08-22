@@ -7,6 +7,7 @@ Since conception of the project, I've deviated a bit from the clone of 750words.
 
 
 - [] Text wrap
+    - Can be implemented like vim's text wrap
 - [] User login
   - [x] Journal Session logging 
   - [] User goals fully implemented
