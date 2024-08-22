@@ -2,8 +2,11 @@ import cmd
 import sqlite3
 from datetime import datetime
 from os import system, name
+<<<<<<< HEAD
 from tui_editor import TuiEditor
+=======
 import uuid
+>>>>>>> 0e41595c6cbaf3d272a79731630b2b782e647d6c
 
 conn = sqlite3.connect('journal.db')
 cursor = conn.cursor()
@@ -48,6 +51,7 @@ class JournalingShell(cmd.Cmd):
     intro_string_1 = "Welcome to Journ, type help or ? to list commands\n"
     intro_string_2 = "Type 'journ' to start\n"
     intro_string_3 = "Note: don't forget to log in to save journ\n"
+
     intro = intro_string_1 + intro_string_2 + intro_string_3
     prompt = '(journ) '
     writing_goal = 0
@@ -128,39 +132,48 @@ class JournalingShell(cmd.Cmd):
         end_time = datetime.now()
 
         elapsed_time = end_time - start_time
+<<<<<<< HEAD
 
         time_string = str(elapsed_time)
 
         parsed_time = time_string.split(":")
         print(f"""You've journalled for {parsed_time[0]} hour(s),
             {parsed_time[1]} minute(s), and {parsed_time[2][:2]} seconds""")
-
-        in_seconds = elapsed_time.total_seconds()
+=======
+        in_seconds = elapsed_time.total_seconds() 
         in_minutes = in_seconds/60
         time_string = str(elapsed_time)
 
         parsed_time = time_string.split(":")
-        journ_wpm = round(journal_length / in_minutes, 1)
+        print(f"You've journalled for {parsed_time[0]} hour(s), {parsed_time[1]} minute(s), and {parsed_time[2][:2]} seconds")
+        journ_wpm = round(journal_length / in_minutes, 1) 
         JournalSession.session_id = start_time
         JournalSession.journ_text = contents
         JournalSession.words_per_minute = journ_wpm
         JournalSession.date = end_time
-        cursor.execute("INSERT INTO journal_session VALUES (?, ? , ?, ?, ?)",
-                       [JournalSession.session_id, JournalSession.journ_text,
-                        JournalSession.words_per_minute,JournalSession.date,True])
+        cursor.execute("INSERT INTO journal_session VALUES (?, ? , ?, ?, ?)", [JournalSession.session_id, JournalSession.journ_text, JournalSession.words_per_minute,JournalSession.date,True])
         conn.commit()
+ 
+>>>>>>> 0e41595c6cbaf3d272a79731630b2b782e647d6c
 
     def streak_details(self, user_name, login):
         raise NotImplementedError
 
     def do_test(self, line):
+<<<<<<< HEAD
         "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         print(cursor.fetchall())
         conn.commit()
-        cursor.execute("SELECT * FROM journal_session")
-        print(cursor.fetchall())
-        conn.commit()
+=======
+       "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
+       cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+       print(cursor.fetchall())
+       conn.commit()
+       cursor.execute("SELECT * FROM journal_session")
+       print(cursor.fetchall())
+       conn.commit()
+>>>>>>> 0e41595c6cbaf3d272a79731630b2b782e647d6c
 
     def save_journal(self, args):
         raise NotImplementedError
