@@ -1,26 +1,31 @@
 import cmd
 import sqlite3
 from datetime import datetime
-from tui_editor import TuiEditor
-from os import system, name
+from os import system, name, getenv, remove
+import subprocess
+import tempfile
 
 conn = sqlite3.connect("journal.db")
 cursor = conn.cursor()
-cursor.execute("""CREATE TABLE IF NOT EXISTS user_info (
+cursor.execute(
+    """CREATE TABLE IF NOT EXISTS user_info (
                 user_id integer,
                 password text,
                 writing_goal integer
-                )""")
+                )"""
+)
 
 conn.commit()
 
-cursor.execute("""CREATE TABLE IF NOT EXISTS journal_session (
+cursor.execute(
+    """CREATE TABLE IF NOT EXISTS journal_session (
                session_id integer,
                journal_text blob,
                words_per_minute real,
                date test,
                accomplished_writing_goal 
-               )""")
+               )"""
+)
 
 conn.commit()
 
@@ -114,19 +119,27 @@ class JournalingShell(cmd.Cmd):
         # user = User(user_name, password, 23)
         # user.register()
 
-    def user_info(user_name):
+    def user_info(self, user_name):
         return True
 
     def do_journ(self, line):
         "Starts the Journalling interface"
-        cmd.doc_header = "test"
         start_time = datetime.now()
         JournalingShell.clear()
-        print("start journaling below. Press ctrl+S to save and quit")
-        editor = TuiEditor()
-        editor.show_line_numbers = True
-        editor.edit()
-        contents = editor.get_text()
+        editor = getenv("EDITOR", "nano")
+        with tempfile.NamedTemporaryFile(suffix=".tmp", delete=True) as temp_file:
+            temp_file_name = temp_file.name
+
+        try:
+            subprocess.run([editor, temp_file_name])
+
+            with open(temp_file_name, "r") as temp_file:
+                edited_content = temp_file.read()
+
+        finally:
+            remove(temp_file_name)
+
+        contents = edited_content
 
         journal_length = len(contents.split())
 
@@ -149,17 +162,18 @@ class JournalingShell(cmd.Cmd):
             f"You've journalled for {parsed_time[0]} hour(s), {parsed_time[1]} minute(s), and {parsed_time[2][:2]} seconds"
         )
         journ_wpm = round(journal_length / in_minutes, 1)
-        JournalSession.session_id = start_time
-        JournalSession.journ_text = contents
-        JournalSession.words_per_minute = journ_wpm
-        JournalSession.date = end_time
+        currentSession = JournalSession
+        currentSession.session_id = start_time
+        currentSession.journ_text = contents
+        currentSession.words_per_minute = journ_wpm
+        currentSession.date = end_time
         cursor.execute(
             "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?)",
             [
-                JournalSession.session_id,
-                JournalSession.journ_text,
-                JournalSession.words_per_minute,
-                JournalSession.date,
+                currentSession.session_id,
+                currentSession.journ_text,
+                currentSession.words_per_minute,
+                currentSession.date,
                 True,
             ],
         )
@@ -185,6 +199,9 @@ class JournalingShell(cmd.Cmd):
 
         else:
             _ = system("clear")
+
+    def do_exit(self, line):
+        return self.do_EOF(line)
 
     def do_EOF(self, line):
         return True
