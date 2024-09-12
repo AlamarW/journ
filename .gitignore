@@ -1,2 +1,4 @@
 *.db
 *.txt
+*.json
+node_modules/
