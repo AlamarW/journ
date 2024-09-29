@@ -10,9 +10,13 @@ It's helpful to have a word counter in your text editor of choice, but journ wil
 
 ### To Do List . 
 
-- [] Fully implement daily tmp file for editing
+- [X] Fully implement daily tmp file for editing
 - [] User login
   - [x] Journal Session logging 
   - [] User goals fully implemented
+  - [] Storage of data based on User Login
+  - [] sqlite database uses stored user idea
+    - [] Disables journ saving if not logged in
+      - [] User can update their goals
 - [] Journaling streak
 - [x] Implement default to user defined text editor

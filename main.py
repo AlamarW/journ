@@ -1,7 +1,7 @@
 import cmd
 import sqlite3
-from datetime import datetime
-from os import system, name, getenv, remove
+from datetime import datetime, date
+from os import system, name, getenv, remove, path, listdir, getcwd
 import subprocess
 import tempfile
 
@@ -19,10 +19,10 @@ conn.commit()
 
 cursor.execute(
     """CREATE TABLE IF NOT EXISTS journal_session (
-               session_id integer,
+               session_id text PRIMARY KEY,
                journal_text blob,
                words_per_minute real,
-               date test,
+               date text,
                accomplished_writing_goal 
                )"""
 )
@@ -125,19 +125,24 @@ class JournalingShell(cmd.Cmd):
     def do_journ(self, line):
         "Starts the Journalling interface"
         start_time = datetime.now()
+        filename = date.today()
+        file_prefix = f"{filename.month}{filename.day}{filename.year}"
+        file_string = f"{file_prefix}.txt"
         JournalingShell.clear()
         editor = getenv("EDITOR", "nano")
-        with tempfile.NamedTemporaryFile(suffix=".tmp", delete=True) as temp_file:
-            temp_file_name = temp_file.name
 
-        try:
-            subprocess.run([editor, temp_file_name])
+        if not path.isfile(file_string):
+            directory = getcwd()
+            for filename in listdir(directory):
+                if filename.endswith(".txt"):
+                    file_path = path.join(directory, filename)
+                    remove(file_path)
 
-            with open(temp_file_name, "r") as temp_file:
-                edited_content = temp_file.read()
+        with open (file_string, "a+") as temp_file:
+            subprocess.run([editor,file_string])
 
-        finally:
-            remove(temp_file_name)
+        with open (file_string, "r") as temp_file:
+            edited_content = temp_file.read()
 
         contents = edited_content
 
@@ -163,20 +168,25 @@ class JournalingShell(cmd.Cmd):
         )
         journ_wpm = round(journal_length / in_minutes, 1)
         currentSession = JournalSession
-        currentSession.session_id = start_time
+        currentSession.session_id = file_prefix
         currentSession.journ_text = contents
         currentSession.words_per_minute = journ_wpm
         currentSession.date = end_time
-        cursor.execute(
-            "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?)",
-            [
-                currentSession.session_id,
-                currentSession.journ_text,
-                currentSession.words_per_minute,
-                currentSession.date,
-                True,
-            ],
-        )
+        try:
+            cursor.execute(
+                "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?)",
+                [
+                    currentSession.session_id,
+                    currentSession.journ_text,
+                    currentSession.words_per_minute,
+                    currentSession.date,
+                    True,
+                ],
+            )
+        except:
+            cursor.execute(
+                "UPDATE journal_session SET journal_text=? WHERE session_id=?", (currentSession.journ_text, currentSession.session_id)
+            )
         conn.commit()
 
     def streak_details(self, user_name, login):
