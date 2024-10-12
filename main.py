@@ -9,7 +9,7 @@ conn = sqlite3.connect("journal.db")
 cursor = conn.cursor()
 cursor.execute(
     """CREATE TABLE IF NOT EXISTS user_info (
-                user_id integer,
+                user_id text,
                 password text,
                 writing_goal integer
                 )"""
@@ -20,10 +20,11 @@ conn.commit()
 cursor.execute(
     """CREATE TABLE IF NOT EXISTS journal_session (
                session_id text PRIMARY KEY,
+               user_id text,
                journal_text blob,
                words_per_minute real,
                date text,
-               accomplished_writing_goal 
+               accomplished_writing_goal
                )"""
 )
 
@@ -43,9 +44,10 @@ class User:
 
 class JournalSession:
     def __init__(
-        self, session_id, journ_text, words_per_minute, accomplished_writing_goal, date
+        self, session_id, user_id, journ_text, words_per_minute, accomplished_writing_goal, date
     ):
         self.session_id = session_id
+        self.user_id = user_id
         self.journ_text = journ_text
         self.words_per_minute = words_per_minute
         self.accomplished_writing_goal = accomplished_writing_goal
@@ -62,10 +64,9 @@ class JournalingShell(cmd.Cmd):
     writing_goal = 0
     name = None
 
-    def do_login(self, line):
-        "Register and Login here!"
+    def login():
+        "Register and Login"
 
-        # registration function needs to go here
         def confirm_login():
             def login():
                 """Ask user for user name, check it against database"""
@@ -79,8 +80,8 @@ class JournalingShell(cmd.Cmd):
                 password_actual = user_data_grab[1]
                 password_attempt = input("What is your password? ")
                 if password_actual == password_attempt:
-                    JournalingShell.name = user_name
-                    JournalingShell.writing_goal = user_data_grab[2]
+                    User.user_id = user_name
+                    User.writing_goal = user_data_grab[2]
                 else:
                     print("invalid password")
                     login()
@@ -169,14 +170,17 @@ class JournalingShell(cmd.Cmd):
         journ_wpm = round(journal_length / in_minutes, 1)
         currentSession = JournalSession
         currentSession.session_id = file_prefix
+        currentSession.user_id = User.user_id
         currentSession.journ_text = contents
         currentSession.words_per_minute = journ_wpm
-        currentSession.date = end_time
+        currentSession.date = str(end_time)
         try:
+            print("Writing to db")
             cursor.execute(
-                "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?)",
+                "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?, ?)",
                 [
                     currentSession.session_id,
+                    currentSession.user_id,
                     currentSession.journ_text,
                     currentSession.words_per_minute,
                     currentSession.date,
@@ -192,16 +196,43 @@ class JournalingShell(cmd.Cmd):
     def streak_details(self, user_name, login):
         raise NotImplementedError
 
-    def do_test(self, line):
-        "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    def do_fetch_user_data(self, line):
+        "Grabs all database data for the logged in user"
+        cursor.execute("SELECT * FROM user_info Where user_id=?", (User.user_id,))
         conn.commit()
-        cursor.execute("SELECT * FROM journal_session")
+        print(cursor.fetchall())
+        print(f"Grabbing data for user -> {User.user_id}. \n")
+        cursor.execute("SELECT * FROM journal_session WHERE user_id=?", (User.user_id,))
         print(cursor.fetchall())
         conn.commit()
 
-    def save_journal(self, args):
-        raise NotImplementedError
+    def do_test(self, lin):
+        "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        print(cursor.fetchall())
+        conn.commit()
+
+    def do_change_writing_goal(self, args):
+        "Change your writing goal"
+        confirm = input("Do you want to change your wirting goal (y/n) ")
+        if confirm.lower() == "n":
+            return
+        elif confirm.lower() == "y":
+            change = input("New word goal -> ")
+            try:
+                change = int(change)
+            except:
+                print("input must be a round number")
+                change = "ERRROR"
+
+            if change == "ERROR":
+                change_writing_goal()
+            else:
+                User.writing_goal = change
+
+                cursor.execute(
+                    "UPDATE user_info SET writing_goal=? WHERE user_id=?", (User.writing_goal, User.user_id))
+                conn.commit()
 
     def clear():
         if name == "nt":
@@ -219,5 +250,6 @@ class JournalingShell(cmd.Cmd):
 
 if __name__ == "__main__":
     JournalingShell.clear()
+    JournalingShell.login()
     JournalingShell().cmdloop()
     conn.close()

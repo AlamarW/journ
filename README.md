@@ -11,12 +11,17 @@ It's helpful to have a word counter in your text editor of choice, but journ wil
 ### To Do List
 
 - [X] Fully implement daily tmp file for editing
-- [] User login
-  - [] Prevent journaling to anyone logged in
+- [x] User login
+  - [x] Prevent journaling to anyone logged out
   - [x] Journal Session logging
-  - [] User goals fully implemented
-  - [] Storage of data based on User Login
-  - [] sqlite database uses stored user idea
-      - [] User can update their goals
+  - [x] User goals fully implemented
+  - [x] Storage of data based on User Login
+  - [x] sqlite database uses stored user idea
+      - [x] User can update their goals
 - [] Journaling streak
 - [x] Implement default to user defined text editor
+- [] Make password optional
+
+### Bug List
+- [] Changing login system created error when user says they've logged in if db is empty
+
