@@ -8,15 +8,15 @@ Since conception of the project, I've deviated a bit from the clone of 750words.
 
 It's helpful to have a word counter in your text editor of choice, but journ will take care of that for you if not (just not as elegantly)
 
-### To Do List . 
+### To Do List
 
 - [X] Fully implement daily tmp file for editing
 - [] User login
-  - [x] Journal Session logging 
+  - [] Prevent journaling to anyone logged in
+  - [x] Journal Session logging
   - [] User goals fully implemented
   - [] Storage of data based on User Login
   - [] sqlite database uses stored user idea
-    - [] Disables journ saving if not logged in
       - [] User can update their goals
 - [] Journaling streak
 - [x] Implement default to user defined text editor
