@@ -8,6 +8,8 @@ Since conception of the project, I've deviated a bit from the clone of 750words.
 
 It's helpful to have a word counter in your text editor of choice, but journ will take care of that for you if not (just not as elegantly)
 
+
+The Completion of below will make journ official v1
 ### To Do List
 
 - [X] Fully implement daily tmp file for editing
@@ -17,11 +19,14 @@ It's helpful to have a word counter in your text editor of choice, but journ wil
   - [x] User goals fully implemented
   - [x] Storage of data based on User Login
   - [x] sqlite database uses stored user idea
-      - [x] User can update their goals
+     - [x] User can update their goals
 - [] Journaling streak
 - [x] Implement default to user defined text editor
-- [] Make password optional
+- [x] Make password optional
+- [] Add current journ data (word count mostly)
 
 ### Bug List
-- [] Changing login system created error when user says they've logged in if db is empty
-
+- [x] Changing login system created error when user says they've logged in if db is empty
+- [x] System allows for overwriting of user names
+- [] Current implementation creates difficult loop if register process starts and user isn't sure they want the selected login, not sure how to fix right now. Will have to replace the recursive calls with while loops.
+- [] journal sessions are not currently tied to user/any user can access any other users' current journ

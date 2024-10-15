@@ -41,7 +41,6 @@ class User:
         print(self.user_id)
         print(self.password)
 
-
 class JournalSession:
     def __init__(
         self, session_id, user_id, journ_text, words_per_minute, accomplished_writing_goal, date
@@ -66,6 +65,8 @@ class JournalingShell(cmd.Cmd):
 
     def login():
         "Register and Login"
+        print("Welcome to journ!")
+        print("The terminal-based journaling program\n")
 
         def confirm_login():
             def login():
@@ -76,8 +77,17 @@ class JournalingShell(cmd.Cmd):
                    user_info WHERE user_id = ?""",
                     [user_name],
                 )
+
                 user_data_grab = user_data.fetchone()
-                password_actual = user_data_grab[1]
+                
+                if user_data_grab == None:
+                    print("No user by that name, please try again or set up user name")
+                    confirm_login()
+                if user_data_grab[1] != None:
+                    password_actual = user_data_grab[1]
+                else:
+                    password_actual = ""
+
                 password_attempt = input("What is your password? ")
                 if password_actual == password_attempt:
                     User.user_id = user_name
@@ -88,15 +98,29 @@ class JournalingShell(cmd.Cmd):
                 return print("logged in")
 
             def register():
-                user_name = input("choose your username ")
-                password = input("Choose your password ")
+                user_name = input("Choose your username ")
+                user_test =  cursor.execute(
+                        """SELECT user_id FROM user_info WHERE user_id =?""",(user_name,)
+                )
+                try:
+                    cursor.fetchall()[0]
+                    print("Name Exists")
+                    register()
+                except:
+                    pass
+                password = input("Choose your password, if you don't want to have a password, leave blank ")
                 writing_goal = input(
                     "Write your daily writing goal (Using digits only) "
                 )
-                cursor.execute(
-                    "INSERT INTO user_info VALUES (?, ? , ?)",
-                    [user_name, password, int(writing_goal)],
-                )
+                confirm_user = input(f"Are you sure your want your user name to be {user_name}? (y/n) ")
+                if confirm_user.lower() == "n":
+                    register()
+                else:
+                    cursor.execute(
+                        "INSERT INTO user_info VALUES (?, ? , ?)",
+                        [user_name, password, int(writing_goal)],
+                    )
+
                 conn.commit()
                 print("Now log in to the system")
                 login()
@@ -107,21 +131,12 @@ class JournalingShell(cmd.Cmd):
                 login()
 
             elif has_registered.lower() == "n":
-                print("not registered")
                 register()
             else:
                 print("input has to be either y or no")
                 confirm_login()
 
         confirm_login()
-        # user_name = input("User name: ")
-        # password = input("password: ")
-
-        # user = User(user_name, password, 23)
-        # user.register()
-
-    def user_info(self, user_name):
-        return True
 
     def do_journ(self, line):
         "Starts the Journalling interface"
@@ -149,12 +164,17 @@ class JournalingShell(cmd.Cmd):
 
         journal_length = len(contents.split())
 
-        if journal_length >= 100:
-            print(f"You've typed {journal_length} words. This is over your goal")
+        if journal_length >= User.writing_goal :
+            print(f"You've typed {journal_length} words. This is over your goal of {User.writing_goal} words!")
 
         else:
-            print(f"You've typed {journal_length} words. This is under your goal")
-
+            print(f"You've typed {journal_length} words. This is under your goal of {User.writing_goal} words")
+        
+        if journal_length >= User.writing_goal:
+            accomplished_goal = True
+        else:
+            accomplished_goal = False
+            
         end_time = datetime.now()
 
         elapsed_time = end_time - start_time
@@ -174,8 +194,9 @@ class JournalingShell(cmd.Cmd):
         currentSession.journ_text = contents
         currentSession.words_per_minute = journ_wpm
         currentSession.date = str(end_time)
+        currentSession.accomplished_writing_goal = accomplished_goal
+
         try:
-            print("Writing to db")
             cursor.execute(
                 "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?, ?)",
                 [
@@ -184,16 +205,17 @@ class JournalingShell(cmd.Cmd):
                     currentSession.journ_text,
                     currentSession.words_per_minute,
                     currentSession.date,
-                    True,
+                    currentSession.accomplished_writing_goal,
                 ],
             )
         except:
             cursor.execute(
-                "UPDATE journal_session SET journal_text=? WHERE session_id=?", (currentSession.journ_text, currentSession.session_id)
+                "UPDATE journal_session SET journal_text=?, accomplished_writing_goal=? WHERE session_id=?", (currentSession.journ_text, currentSession.accomplished_writing_goal, currentSession.session_id)
             )
         conn.commit()
 
-    def streak_details(self, user_name, login):
+    def do_streak_details(self, line):
+        print(line)
         raise NotImplementedError
 
     def do_fetch_user_data(self, line):
@@ -206,7 +228,7 @@ class JournalingShell(cmd.Cmd):
         print(cursor.fetchall())
         conn.commit()
 
-    def do_test(self, lin):
+    def do_test(self, line):
         "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         print(cursor.fetchall())
@@ -234,6 +256,9 @@ class JournalingShell(cmd.Cmd):
                     "UPDATE user_info SET writing_goal=? WHERE user_id=?", (User.writing_goal, User.user_id))
                 conn.commit()
 
+    def do_journ_wc(self, line):
+        raise NotImplementedError
+
     def clear():
         if name == "nt":
             _ = system("cls")
@@ -242,14 +267,16 @@ class JournalingShell(cmd.Cmd):
             _ = system("clear")
 
     def do_exit(self, line):
-        return self.do_EOF(line)
+        "Exits System"
+        return self.__do_EOF__(line)
 
-    def do_EOF(self, line):
+    def __do_EOF__(self, line):
         return True
 
 
 if __name__ == "__main__":
     JournalingShell.clear()
     JournalingShell.login()
+    JournalingShell.clear()
     JournalingShell().cmdloop()
     conn.close()
