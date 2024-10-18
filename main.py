@@ -4,6 +4,7 @@ from datetime import datetime, date
 from os import system, name, getenv, remove, path, listdir, getcwd
 import subprocess
 import tempfile
+import time
 
 conn = sqlite3.connect("journal.db")
 cursor = conn.cursor()
@@ -56,9 +57,8 @@ class JournalSession:
 class JournalingShell(cmd.Cmd):
     intro_string_1 = "Welcome to Journ, type help or ? to list commands\n"
     intro_string_2 = "Type 'journ' to start\n"
-    intro_string_3 = "Note: don't forget to log in to save journ\n"
 
-    intro = intro_string_1 + intro_string_2 + intro_string_3
+    intro = intro_string_1 + intro_string_2
     prompt = "(journ) "
     writing_goal = 0
     name = None
@@ -83,7 +83,7 @@ class JournalingShell(cmd.Cmd):
                 if user_data_grab == None:
                     print("No user by that name, please try again or set up user name")
                     confirm_login()
-                if user_data_grab[1] != None:
+                if user_data_grab != None:
                     password_actual = user_data_grab[1]
                 else:
                     password_actual = ""
@@ -140,6 +140,7 @@ class JournalingShell(cmd.Cmd):
 
     def do_journ(self, line):
         "Starts the Journalling interface"
+
         start_time = datetime.now()
         filename = date.today()
         file_prefix = f"{filename.month}{filename.day}{filename.year}"
@@ -153,15 +154,24 @@ class JournalingShell(cmd.Cmd):
                 if filename.endswith(".txt"):
                     file_path = path.join(directory, filename)
                     remove(file_path)
+        try:
+            cursor.execute(
+                """SELECT journal_text FROM journal_session WHERE session_id=?""", [file_prefix],
+            )
+            journ_data = cursor.fetchall()[0][0]
+        except:
+            journ_data = ""
 
-        with open (file_string, "a+") as temp_file:
-            subprocess.run([editor,file_string])
+        with open (file_string, "w") as temp_file:
+            temp_file.write(journ_data)
+
+        subprocess.run([editor,file_string])
 
         with open (file_string, "r") as temp_file:
             edited_content = temp_file.read()
 
         contents = edited_content
-
+        remove(file_string)
         journal_length = len(contents.split())
 
         if journal_length >= User.writing_goal :
@@ -256,8 +266,13 @@ class JournalingShell(cmd.Cmd):
                     "UPDATE user_info SET writing_goal=? WHERE user_id=?", (User.writing_goal, User.user_id))
                 conn.commit()
 
-    def do_journ_wc(self, line):
-        raise NotImplementedError
+    def do_todays_journ(self, line):
+        cursor.execute(
+                """SELECT journal_text FROM journal_session"""
+        )
+        current_text = cursor.fetchall()[-1][0]
+        text_length = len(current_text.split())
+        print(f"Your current word count for today is {text_length} and your goal word count it {User.writing_goal}.")
 
     def clear():
         if name == "nt":
