@@ -19,11 +19,11 @@ The Completion of below will make journ official v1
   - [x] User goals fully implemented
   - [x] Storage of data based on User Login
   - [x] sqlite database uses stored user idea
-     - [x] User can update their goals
+    - [x] User can update their goals
 - [] Journaling streak
 - [x] Implement default to user defined text editor
 - [x] Make password optional
-- [] Add current journ data (word count mostly)
+- [x] Add current journ data (word count mostly)
 
 ### Bug List
 - [x] Changing login system created error when user says they've logged in if db is empty
