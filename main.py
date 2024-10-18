@@ -1,6 +1,6 @@
 import cmd
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from os import system, name, getenv, remove, path, listdir, getcwd
 import subprocess
 import tempfile
@@ -12,7 +12,8 @@ cursor.execute(
     """CREATE TABLE IF NOT EXISTS user_info (
                 user_id text,
                 password text,
-                writing_goal integer
+                writing_goal integer,
+                streak integer 
                 )"""
 )
 
@@ -33,10 +34,11 @@ conn.commit()
 
 
 class User:
-    def __init__(self, user_id, password, writing_goal):
+    def __init__(self, user_id, password, writing_goal, streak):
         self.user_id = user_id
         self.password = password
         self.writing_goal = writing_goal
+        self.streak = streak
 
     def register(self):
         print(self.user_id)
@@ -73,7 +75,7 @@ class JournalingShell(cmd.Cmd):
                 """Ask user for user name, check it against database"""
                 user_name = input("What is your user name? ")
                 user_data = cursor.execute(
-                    """SELECT user_id, password, writing_goal FROM
+                    """SELECT user_id, password, writing_goal, streak FROM
                    user_info WHERE user_id = ?""",
                     [user_name],
                 )
@@ -92,6 +94,7 @@ class JournalingShell(cmd.Cmd):
                 if password_actual == password_attempt:
                     User.user_id = user_name
                     User.writing_goal = user_data_grab[2]
+                    User.streak = user_data_grab[3]
                 else:
                     print("invalid password")
                     login()
@@ -117,8 +120,8 @@ class JournalingShell(cmd.Cmd):
                     register()
                 else:
                     cursor.execute(
-                        "INSERT INTO user_info VALUES (?, ? , ?)",
-                        [user_name, password, int(writing_goal)],
+                        "INSERT INTO user_info VALUES (?, ? , ?, ?)",
+                        [user_name, password, int(writing_goal), 0],
                     )
 
                 conn.commit()
@@ -140,10 +143,37 @@ class JournalingShell(cmd.Cmd):
 
     def do_journ(self, line):
         "Starts the Journalling interface"
+        
+        def streak_calc(today_date, currentSession):
+            previous_day = today_date - timedelta(days=1)
+            file_prefix = f"{previous_day.month}{previous_day.day}{previous_day.year}"
+
+            cursor.execute(
+                    """SELECT journal_text FROM journal_session WHERE session_id=?""", [file_prefix],
+            )
+
+            try:
+                content = cursor.fectchall()[0]
+            except:
+                content = False
+
+            if content and currentSession.accomplished_writing_goal == True:
+                print("there was an entry for yesterday")
+                User.streak +=1
+                print(f"your current streak is {User.streak}")
+            elif content and currentSession.accomplished_writing_goal == False:
+                print("There was an entry for yesterday but you haven't finished your word goal today")
+                print(f"Your current streak is {User.streak}, but will go to {User.streak + 1} when you finish your goal today")
+            elif content == False and currentSession.accomplished_writing_goal == True:
+                print("no entry for yesterday")
+                User.streak += 1
+                print(f"Your current streak is {User.streak}")
+            else:
+                print(f"Your current streak is {User.streak}")
 
         start_time = datetime.now()
-        filename = date.today()
-        file_prefix = f"{filename.month}{filename.day}{filename.year}"
+        today_date = date.today()
+        file_prefix = f"{today_date.month}{today_date.day}{today_date.year}"
         file_string = f"{file_prefix}.txt"
         JournalingShell.clear()
         editor = getenv("EDITOR", "nano")
@@ -206,6 +236,8 @@ class JournalingShell(cmd.Cmd):
         currentSession.date = str(end_time)
         currentSession.accomplished_writing_goal = accomplished_goal
 
+        streak_calc(today_date, currentSession)
+
         try:
             cursor.execute(
                 "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?, ?)",
@@ -220,13 +252,21 @@ class JournalingShell(cmd.Cmd):
             )
         except:
             cursor.execute(
-                "UPDATE journal_session SET journal_text=?, accomplished_writing_goal=? WHERE session_id=?", (currentSession.journ_text, currentSession.accomplished_writing_goal, currentSession.session_id)
+                "UPDATE journal_session SET journal_text=?, accomplished_writing_goal=? WHERE session_id=?", (currentSession.journ_text, currentSession.accomplished_writing_goal, currentSession.session_id,)
             )
         conn.commit()
 
+        try:
+            cursor.execute(
+                "UPDATE user_info SET streak=? WHERE user_id=?", (User.streak, User.user_id,) 
+            )
+        except:
+            pass
+        conn.commit()
+        
     def do_streak_details(self, line):
-        print(line)
-        raise NotImplementedError
+        "Pulls your current streak status"
+        print(f"Your streak is currently {User.streak} days")
 
     def do_fetch_user_data(self, line):
         "Grabs all database data for the logged in user"
@@ -235,12 +275,6 @@ class JournalingShell(cmd.Cmd):
         print(cursor.fetchall())
         print(f"Grabbing data for user -> {User.user_id}. \n")
         cursor.execute("SELECT * FROM journal_session WHERE user_id=?", (User.user_id,))
-        print(cursor.fetchall())
-        conn.commit()
-
-    def do_test(self, line):
-        "Check DB Status, should be two tables (DELETE BEFORE FINAL RELEASE"
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         print(cursor.fetchall())
         conn.commit()
 
@@ -267,11 +301,15 @@ class JournalingShell(cmd.Cmd):
                 conn.commit()
 
     def do_todays_journ(self, line):
+        "Pulls the word count of today's journalling session"
         cursor.execute(
                 """SELECT journal_text FROM journal_session"""
         )
-        current_text = cursor.fetchall()[-1][0]
-        text_length = len(current_text.split())
+        try:
+            current_text = cursor.fetchall()[-1][0]
+            text_length = len(current_text.split())
+        except:
+            text_length = 0
         print(f"Your current word count for today is {text_length} and your goal word count it {User.writing_goal}.")
 
     def clear():
