@@ -28,6 +28,6 @@ The Completion of below will make journ official v1
 ### Bug List
 - [x] Changing login system created error when user says they've logged in if db is empty
 - [x] System allows for overwriting of user names
-- [] Current implementation creates difficult loop if register process starts and user isn't sure they want the selected login, not sure how to fix right now. Will have to replace the recursive calls with while loops.
+- [x] Current implementation creates difficult loop if register process starts and user isn't sure they want the selected login, not sure how to fix right now. Will have to replace the recursive calls with while loops.
 - [x] journal sessions are not currently tied to user/any user can access any other users' current journ
 - [x] todays_journ breaks when user hasn't journaled yet

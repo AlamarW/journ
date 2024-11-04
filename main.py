@@ -59,85 +59,93 @@ class JournalSession:
 class JournalingShell(cmd.Cmd):
     intro_string_1 = "Welcome to Journ, type help or ? to list commands\n"
     intro_string_2 = "Type 'journ' to start\n"
-
     intro = intro_string_1 + intro_string_2
     prompt = "(journ) "
     writing_goal = 0
     name = None
 
-    def login():
-        "Register and Login"
+    def main_login():
+        """Register and Login"""
         print("Welcome to journ!")
         print("The terminal-based journaling program\n")
 
         def confirm_login():
+
             def login():
                 """Ask user for user name, check it against database"""
-                user_name = input("What is your user name? ")
-                user_data = cursor.execute(
-                    """SELECT user_id, password, writing_goal, streak FROM
-                   user_info WHERE user_id = ?""",
-                    [user_name],
-                )
-
-                user_data_grab = user_data.fetchone()
-                
-                if user_data_grab == None:
-                    print("No user by that name, please try again or set up user name")
-                    confirm_login()
-                if user_data_grab != None:
-                    password_actual = user_data_grab[1]
-                else:
-                    password_actual = ""
-
-                password_attempt = input("What is your password? ")
-                if password_actual == password_attempt:
-                    User.user_id = user_name
-                    User.writing_goal = user_data_grab[2]
-                    User.streak = user_data_grab[3]
-                else:
-                    print("invalid password")
-                    login()
-                return print("logged in")
-
-            def register():
-                user_name = input("Choose your username ")
-                user_test =  cursor.execute(
-                        """SELECT user_id FROM user_info WHERE user_id =?""",(user_name,)
-                )
-                try:
-                    cursor.fetchall()[0]
-                    print("Name Exists")
-                    register()
-                except:
-                    pass
-                password = input("Choose your password, if you don't want to have a password, leave blank ")
-                writing_goal = input(
-                    "Write your daily writing goal (Using digits only) "
-                )
-                confirm_user = input(f"Are you sure your want your user name to be {user_name}? (y/n) ")
-                if confirm_user.lower() == "n":
-                    register()
-                else:
-                    cursor.execute(
-                        "INSERT INTO user_info VALUES (?, ? , ?, ?)",
-                        [user_name, password, int(writing_goal), 0],
+                loop = True
+                while loop:
+                    user_name = input("What is your user name? ")
+                    user_data = cursor.execute(
+                        """SELECT user_id, password, writing_goal, streak FROM
+                       user_info WHERE user_id = ?""",
+                        [user_name],
                     )
 
-                conn.commit()
-                print("Now log in to the system")
-                login()
+                    user_data_grab = user_data.fetchone()
+                    
+                    if user_data_grab == None:
+                        print("No user by that name, please try again or set up user name")
+                        continue
+                    if user_data_grab != None:
+                        password_actual = user_data_grab[1]
+                    else:
+                        password_actual = ""
 
-            has_registered = input("Have you set up a user name and password?(y/n) ")
+                    password_attempt = input("What is your password? ")
+                    if password_actual == password_attempt:
+                        User.user_id = user_name
+                        User.writing_goal = user_data_grab[2]
+                        User.streak = user_data_grab[3]
+                    else:
+                        print("invalid password")
+                        continue
+                    return print("logged in")
 
-            if has_registered.lower() == "y":
-                login()
+            def register():
+                while True:
+                    user_name = input("Choose your username ")
+                    user_test =  cursor.execute(
+                            """SELECT user_id FROM user_info WHERE user_id =?""",(user_name,)
+                    )
+                    try:
+                        cursor.fetchall()[0]
+                        print("Name Exists")
+                        continue
+                    except:
+                        pass
+                    password = input("Choose your password, if you don't want to have a password, leave blank ")
+                    writing_goal = input(
+                        "Write your daily writing goal (Using digits only) "
+                    )
+                    confirm_user = input(f"Are you sure your want your user name to be {user_name}? (y/n) ")
+                    if confirm_user.lower() == "n":
+                        continue
+                    else:
+                        cursor.execute(
+                            "INSERT INTO user_info VALUES (?, ? , ?, ?)",
+                            [user_name, password, int(writing_goal), 0],
+                        )
 
-            elif has_registered.lower() == "n":
-                register()
-            else:
-                print("input has to be either y or no")
-                confirm_login()
+                    conn.commit()
+                    print("You are now logged in")
+                    break
+            loop = True
+            while loop:
+                has_registered = input("Have you set up a user name and password?(y/n) ")
+
+                if has_registered.lower() == "y":
+                    login()
+                    loop = False
+                    break
+
+                elif has_registered.lower() == "n":
+                    register()
+                    loop = False
+                    break
+                else:
+                    print("input has to be either y or no")
+                    continue
 
         confirm_login()
 
@@ -165,7 +173,6 @@ class JournalingShell(cmd.Cmd):
                 print("There was an entry for yesterday but you haven't finished your word goal today")
                 print(f"Your current streak is {User.streak}, but will go to {User.streak + 1} when you finish your goal today")
             elif content == False and currentSession.accomplished_writing_goal == True:
-                print("no entry for yesterday")
                 User.streak += 1
                 print(f"Your current streak is {User.streak}")
             else:
@@ -329,7 +336,7 @@ class JournalingShell(cmd.Cmd):
 
 if __name__ == "__main__":
     JournalingShell.clear()
-    JournalingShell.login()
+    JournalingShell.main_login()
     JournalingShell.clear()
     JournalingShell().cmdloop()
     conn.close()
