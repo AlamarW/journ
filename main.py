@@ -13,7 +13,8 @@ cursor.execute(
                 user_id text,
                 password text,
                 writing_goal integer,
-                streak integer 
+                streak integer,
+                streak_added
                 )"""
 )
 
@@ -22,6 +23,7 @@ conn.commit()
 cursor.execute(
     """CREATE TABLE IF NOT EXISTS journal_session (
                session_id text PRIMARY KEY,
+               session_name text,
                user_id text,
                journal_text blob,
                words_per_minute real,
@@ -34,11 +36,12 @@ conn.commit()
 
 
 class User:
-    def __init__(self, user_id, password, writing_goal, streak):
+    def __init__(self, user_id, password, writing_goal, streak, streak_added):
         self.user_id = user_id
         self.password = password
         self.writing_goal = writing_goal
         self.streak = streak
+        self.streak_added = streak_added
 
     def register(self):
         print(self.user_id)
@@ -46,9 +49,10 @@ class User:
 
 class JournalSession:
     def __init__(
-        self, session_id, user_id, journ_text, words_per_minute, accomplished_writing_goal, date
+        self, session_id, session_name, user_id, journ_text, words_per_minute, accomplished_writing_goal, date
     ):
         self.session_id = session_id
+        self.session_name = session_name
         self.user_id = user_id
         self.journ_text = journ_text
         self.words_per_minute = words_per_minute
@@ -77,7 +81,7 @@ class JournalingShell(cmd.Cmd):
                 while loop:
                     user_name = input("What is your user name? ")
                     user_data = cursor.execute(
-                        """SELECT user_id, password, writing_goal, streak FROM
+                        """SELECT user_id, password, writing_goal, streak, streak_added FROM
                        user_info WHERE user_id = ?""",
                         [user_name],
                     )
@@ -97,6 +101,7 @@ class JournalingShell(cmd.Cmd):
                         User.user_id = user_name
                         User.writing_goal = user_data_grab[2]
                         User.streak = user_data_grab[3]
+                        User.streak_added = user_data_grab[4]
                     else:
                         print("invalid password")
                         continue
@@ -123,12 +128,12 @@ class JournalingShell(cmd.Cmd):
                         continue
                     else:
                         cursor.execute(
-                            "INSERT INTO user_info VALUES (?, ? , ?, ?)",
-                            [user_name, password, int(writing_goal), 0],
+                            "INSERT INTO user_info VALUES (?, ? , ?, ?, ?)",
+                            [user_name, password, int(writing_goal), 0, False],
                         )
-
                     conn.commit()
-                    print("You are now logged in")
+                    print("Now login with your credentials ")
+                    login()
                     break
             loop = True
             while loop:
@@ -157,7 +162,7 @@ class JournalingShell(cmd.Cmd):
             file_prefix = f"{previous_day.month}{previous_day.day}{previous_day.year}"
 
             cursor.execute(
-                    """SELECT journal_text FROM journal_session WHERE session_id=?""", [file_prefix],
+                    """SELECT journal_text FROM journal_session WHERE session_name=? AND user_id=?""", [file_prefix, User.user_id],
             )
 
             try:
@@ -165,15 +170,17 @@ class JournalingShell(cmd.Cmd):
             except:
                 content = False
 
-            if content and currentSession.accomplished_writing_goal == True:
+            if content and currentSession.accomplished_writing_goal == True and User.streak_added == False:
                 print("there was an entry for yesterday")
                 User.streak +=1
+                User.streak_added = True
                 print(f"your current streak is {User.streak}")
             elif content and currentSession.accomplished_writing_goal == False:
                 print("There was an entry for yesterday but you haven't finished your word goal today")
                 print(f"Your current streak is {User.streak}, but will go to {User.streak + 1} when you finish your goal today")
-            elif content == False and currentSession.accomplished_writing_goal == True:
+            elif content == False and currentSession.accomplished_writing_goal == True and User.streak_added == False:
                 User.streak += 1
+                User.streak_added = True
                 print(f"Your current streak is {User.streak}")
             else:
                 print(f"Your current streak is {User.streak}")
@@ -193,7 +200,7 @@ class JournalingShell(cmd.Cmd):
                     remove(file_path)
         try:
             cursor.execute(
-                """SELECT journal_text FROM journal_session WHERE session_id=?""", [file_prefix],
+                """SELECT journal_text FROM journal_session WHERE session_name=? AND user_id=?""", [file_prefix,User.user_id],
             )
             journ_data = cursor.fetchall()[0][0]
         except:
@@ -235,40 +242,41 @@ class JournalingShell(cmd.Cmd):
             f"You've journalled for {parsed_time[0]} hour(s), {parsed_time[1]} minute(s), and {parsed_time[2][:2]} seconds"
         )
         journ_wpm = round(journal_length / in_minutes, 1)
-        currentSession = JournalSession
-        currentSession.session_id = file_prefix
-        currentSession.user_id = User.user_id
-        currentSession.journ_text = contents
-        currentSession.words_per_minute = journ_wpm
-        currentSession.date = str(end_time)
-        currentSession.accomplished_writing_goal = accomplished_goal
+        JournalSession.session_id = f"{file_prefix}_{User.user_id}"
+        JournalSession.session_name = file_prefix
+        JournalSession.user_id = User.user_id
+        JournalSession.journ_text = contents
+        JournalSession.words_per_minute = journ_wpm
+        JournalSession.date = str(end_time)
+        JournalSession.accomplished_writing_goal = accomplished_goal
 
-        streak_calc(today_date, currentSession)
+        streak_calc(today_date, JournalSession)
 
         try:
             cursor.execute(
-                "INSERT INTO journal_session VALUES (?, ? , ?, ?, ?, ?)",
+                "INSERT INTO journal_session VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [
-                    currentSession.session_id,
-                    currentSession.user_id,
-                    currentSession.journ_text,
-                    currentSession.words_per_minute,
-                    currentSession.date,
-                    currentSession.accomplished_writing_goal,
+                    JournalSession.session_id,
+                    JournalSession.session_name,
+                    JournalSession.user_id,
+                    JournalSession.journ_text,
+                    JournalSession.words_per_minute,
+                    JournalSession.date,
+                    JournalSession.accomplished_writing_goal,
                 ],
             )
         except:
             cursor.execute(
-                "UPDATE journal_session SET journal_text=?, accomplished_writing_goal=? WHERE session_id=?", (currentSession.journ_text, currentSession.accomplished_writing_goal, currentSession.session_id,)
+                "UPDATE journal_session SET journal_text=?, accomplished_writing_goal=? WHERE session_name=? AND user_id=?", (JournalSession.journ_text, JournalSession.accomplished_writing_goal, JournalSession.session_name,User.user_id)
             )
         conn.commit()
 
         try:
             cursor.execute(
-                "UPDATE user_info SET streak=? WHERE user_id=?", (User.streak, User.user_id,) 
+                "UPDATE user_info SET streak=?, streak_added=? WHERE user_id=?", (User.streak, User.streak_added, User.user_id,) 
             )
         except:
-            pass
+            print("This is causing problems")
         conn.commit()
         
     def do_streak_details(self, line):
@@ -310,7 +318,7 @@ class JournalingShell(cmd.Cmd):
     def do_todays_journ(self, line):
         "Pulls the word count of today's journalling session"
         cursor.execute(
-                """SELECT journal_text FROM journal_session"""
+                """SELECT journal_text FROM journal_session WHERE user_id=?""", [User.user_id]
         )
         try:
             current_text = cursor.fetchall()[-1][0]

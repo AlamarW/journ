@@ -31,3 +31,6 @@ The Completion of below will make journ official v1
 - [x] Current implementation creates difficult loop if register process starts and user isn't sure they want the selected login, not sure how to fix right now. Will have to replace the recursive calls with while loops.
 - [x] journal sessions are not currently tied to user/any user can access any other users' current journ
 - [x] todays_journ breaks when user hasn't journaled yet
+- [x] Streak incremented multiple times a day 
+- [x] Registration followed by journ breaks system
+- [x] other users can still access another's daily journ
