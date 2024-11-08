@@ -205,6 +205,7 @@ class JournalingShell(cmd.Cmd):
             journ_data = cursor.fetchall()[0][0]
         except:
             journ_data = ""
+            User.streak_added = False
 
         with open (file_string, "w") as temp_file:
             temp_file.write(journ_data)
@@ -315,8 +316,8 @@ class JournalingShell(cmd.Cmd):
                     "UPDATE user_info SET writing_goal=? WHERE user_id=?", (User.writing_goal, User.user_id))
                 conn.commit()
 
-    def do_todays_journ(self, line):
-        "Pulls the word count of today's journalling session"
+    def do_last_journ(self, line):
+        "Pulls the word count of your last journalling session (will be either from previous days, or from current day)"
         cursor.execute(
                 """SELECT journal_text FROM journal_session WHERE user_id=?""", [User.user_id]
         )
@@ -326,6 +327,31 @@ class JournalingShell(cmd.Cmd):
         except:
             text_length = 0
         print(f"Your current word count for today is {text_length} and your goal word count it {User.writing_goal}.")
+
+    def do_change_password(self, line):
+        while True:
+            confirm_pass = input("Do you want to change your password? (y/n) ")
+            if confirm_pass.lower() == "n":
+                break
+            elif confirm_pass.lower() == "y":
+
+                change = input("New password -> ")
+                confirm_change = input("Please put in password again -> ")
+                if change == confirm_change:
+                    cursor.execute(
+                            "UPDATE user_info SET password=? WHERE user_id=?", (change, User.user_id)
+                    )
+                    conn.commit()
+                else:
+                    print("error, try again")
+                    continue
+
+                print("Changing password")
+                break
+            else:
+                print("input must be y or n")
+                continue
+
 
     def clear():
         if name == "nt":
