@@ -1,4 +1,9 @@
 *.db
 *.txt
 *.json
+*.pyc
+__pycache__/
+dist/
+build/
+*.egg-info/
 node_modules/
