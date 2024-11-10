@@ -1,9 +1,12 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="journ",
-    version="0.1.0",
+    name="journ_app",
+    version="1.0.2",
     packages=find_packages(),
+    description="A CLI Journaling that honors your text editor of choice",
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
     entry_points={
         "console_scripts": [
             "journ=journ.main:main",

@@ -367,10 +367,12 @@ class JournalingShell(cmd.Cmd):
     def __do_EOF__(self, line):
         return True
 
-
-if __name__ == "__main__":
+def main():
     JournalingShell.clear()
     JournalingShell.main_login()
     JournalingShell.clear()
     JournalingShell().cmdloop()
     conn.close()
+
+if __name__ == "__main__":
+    main()
