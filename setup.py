@@ -2,7 +2,10 @@ from setuptools import setup, find_packages
 
 setup(
     name="journ_app",
-    version="1.0.2",
+    version="1.0.3",
+    author="Austin Wiggins",
+    author_email="Austinlamarwiggins@gmail.com",
+    url="https://github.com/AlamarW/journ",
     packages=find_packages(),
     description="A CLI Journaling that honors your text editor of choice",
     long_description=open("README.md").read(),
