@@ -1,12 +1,16 @@
 import cmd
 import sqlite3
 from datetime import datetime, date, timedelta
-from os import system, name, getenv, remove, path, listdir, getcwd
+from os import system, name, getenv, remove, path, listdir, getcwd, makedirs
 import subprocess
 import tempfile
 import time
 
-conn = sqlite3.connect("journal.db")
+home_dir = path.expanduser("~")
+journal_filepath = path.join(home_dir,".journ", "journal.db")
+makedirs(path.dirname(journal_filepath), exist_ok=True)
+
+conn = sqlite3.connect(journal_filepath)
 cursor = conn.cursor()
 cursor.execute(
     """CREATE TABLE IF NOT EXISTS user_info (
