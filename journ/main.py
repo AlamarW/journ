@@ -243,10 +243,13 @@ class JournalingShell(cmd.Cmd):
         time_string = str(elapsed_time)
 
         parsed_time = time_string.split(":")
+        journ_wpm = round(journal_length / in_minutes, 1)
         print(
             f"You've journalled for {parsed_time[0]} hour(s), {parsed_time[1]} minute(s), and {parsed_time[2][:2]} seconds"
         )
-        journ_wpm = round(journal_length / in_minutes, 1)
+        print(
+            f"That's {journ_wpm} words per minute"
+        )
         JournalSession.session_id = f"{file_prefix}_{User.user_id}"
         JournalSession.session_name = file_prefix
         JournalSession.user_id = User.user_id
