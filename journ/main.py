@@ -324,7 +324,7 @@ class JournalingShell(cmd.Cmd):
                 conn.commit()
 
     def do_last_journ(self, line):
-        "Pulls the word count of your last journalling session (will be either from previous days, or from current day)"
+        """Pulls the word count of your last journalling session (will be either from previous days, or from current day)"""
         cursor.execute(
                 """SELECT journal_text FROM journal_session WHERE user_id=?""", [User.user_id]
         )
@@ -336,6 +336,7 @@ class JournalingShell(cmd.Cmd):
         print(f"Your current word count for today is {text_length} and your goal word count it {User.writing_goal}.")
 
     def do_change_password(self, line):
+        """Quick utility to change user password"""
         while True:
             confirm_pass = input("Do you want to change your password? (y/n) ")
             if confirm_pass.lower() == "n":
@@ -359,6 +360,29 @@ class JournalingShell(cmd.Cmd):
                 print("input must be y or n")
                 continue
 
+    def do_basic_stats(self, line):
+        """Shows you basic stats on your journaling data: average word count, total words written, (eventually) sentiment analysis of your text"""
+
+        cursor.execute(
+                "SELECT AVG(words_per_minute) FROM journal_session WHERE user_id=?", (User.user_id,)
+        )
+        conn.commit
+
+        user_data = cursor.fetchone()
+        wpm_avg = round(user_data[0], 2)
+        
+        cursor.execute(
+                "SELECT journal_text FROM journal_session WHERE user_id=?", (User.user_id,)
+        )
+        conn.commit
+        journal_blob = cursor.fetchall()
+        total_words = 0
+
+        for i in journal_blob:
+            total_words += len(i[0].split())
+
+        print(f"Your average words per minute is {wpm_avg}")
+        print(f"You've written a total of {total_words} words!")
 
     def clear():
         if name == "nt":

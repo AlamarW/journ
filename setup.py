@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="journ_app",
-    version="1.0.5",
+    version="1.0.6",
     author="Austin Wiggins",
     author_email="Austinlamarwiggins@gmail.com",
     url="https://github.com/AlamarW/journ",
