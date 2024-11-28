@@ -1,5 +1,6 @@
 import cmd
 import sqlite3
+import sys
 from datetime import datetime, date, timedelta
 from os import system, name, getenv, remove, path, listdir, getcwd, makedirs
 import subprocess
@@ -63,7 +64,6 @@ class JournalSession:
         self.accomplished_writing_goal = accomplished_writing_goal
         self.date = date
 
-
 class JournalingShell(cmd.Cmd):
     intro_string_1 = "Welcome to Journ, type help or ? to list commands\n"
     intro_string_2 = "Type 'journ' to start\n"
@@ -79,15 +79,14 @@ class JournalingShell(cmd.Cmd):
 
         def confirm_login():
 
-            def login():
+            def login(user_input):
                 """Ask user for user name, check it against database"""
                 loop = True
                 while loop:
-                    user_name = input("What is your user name? ")
                     user_data = cursor.execute(
                         """SELECT user_id, password, writing_goal, streak, streak_added FROM
                        user_info WHERE user_id = ?""",
-                        [user_name],
+                        [user_input],
                     )
 
                     user_data_grab = user_data.fetchone()
@@ -102,7 +101,7 @@ class JournalingShell(cmd.Cmd):
 
                     password_attempt = input("What is your password? ")
                     if password_actual == password_attempt:
-                        User.user_id = user_name
+                        User.user_id = user_input
                         User.writing_goal = user_data_grab[2]
                         User.streak = user_data_grab[3]
                         User.streak_added = user_data_grab[4]
@@ -141,20 +140,21 @@ class JournalingShell(cmd.Cmd):
                     break
             loop = True
             while loop:
-                has_registered = input("Have you set up a user name and password?(y/n) ")
+                user_input = input("Enter your username or type 'new' to create a new username: ")
 
-                if has_registered.lower() == "y":
-                    login()
-                    loop = False
-                    break
-
-                elif has_registered.lower() == "n":
+                if user_input.lower() == "new":
                     register()
                     loop = False
                     break
+
+                elif user_input.lower() == "exit":
+                    print("Exiting journ")
+                    sys.exit()
+
                 else:
-                    print("input has to be either y or no")
-                    continue
+                    login(user_input)
+                    loop = False
+                    break
 
         confirm_login()
 
