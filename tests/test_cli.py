@@ -1,4 +1,5 @@
 import sys
+from datetime import date
 
 from typer.testing import CliRunner
 
@@ -146,3 +147,93 @@ def test_export_rejects_unknown_format(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "must be" in result.output.lower()
     assert not (tmp_path / "out.txt").exists()
+
+
+def test_export_include_private_flag(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write", "--private"], input="5\nn\n")
+
+    export_path = tmp_path / "export.json"
+    result = runner.invoke(cli.app, ["export", str(export_path), "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert "--include-private" in result.output
+    assert not export_path.exists()
+
+    result = runner.invoke(
+        cli.app, ["export", str(export_path), "--format", "json", "--include-private"]
+    )
+    assert result.exit_code == 0, result.output
+    assert export_path.exists()
+    assert "stub" in export_path.read_text()
+
+
+def test_write_private_flag_marks_new_entry_private(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+
+    result = runner.invoke(cli.app, ["write", "--private"], input="5\nn\n")
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(cli.app, ["private", date.today().isoformat(), "--unset"])
+    assert "no longer private" in result.output  # confirms it *was* private beforehand
+
+
+def test_write_rejects_both_private_and_unprivate(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    result = runner.invoke(cli.app, ["write", "--private", "--unprivate"])
+    assert result.exit_code == 1
+    assert "can't both be set" in result.output
+
+
+def test_private_command_marks_and_unmarks_entry(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write"], input="5\nn\n")
+
+    today = date.today().isoformat()
+
+    result = runner.invoke(cli.app, ["private", today])
+    assert result.exit_code == 0, result.output
+    assert "now private" in result.output
+
+    result = runner.invoke(cli.app, ["private", today, "--unset"])
+    assert result.exit_code == 0, result.output
+    assert "no longer private" in result.output
+
+
+def test_mcp_unlock_status_lock_flow(tmp_path, monkeypatch, fake_keyring):
+    _isolate(tmp_path, monkeypatch)
+    # First-run profile setup with a passphrase this time.
+    runner.invoke(cli.app, ["goal"], input="750\ny\nhunter2\nhunter2\n")
+
+    result = runner.invoke(cli.app, ["mcp", "status"])
+    assert result.exit_code == 0, result.output
+    assert "No key is currently cached" in result.output
+
+    result = runner.invoke(cli.app, ["mcp", "unlock"], input="hunter2\n")
+    assert result.exit_code == 0, result.output
+    assert "cached indefinitely" in result.output
+
+    result = runner.invoke(cli.app, ["mcp", "status"])
+    assert result.exit_code == 0, result.output
+    assert "has been cached for" in result.output
+
+    result = runner.invoke(cli.app, ["mcp", "lock"])
+    assert result.exit_code == 0, result.output
+    assert "removed" in result.output
+
+    result = runner.invoke(cli.app, ["mcp", "status"])
+    assert "No key is currently cached" in result.output
+
+
+def test_mcp_serve_private_without_content_errors(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["goal"], input="750\nn\n")
+
+    result = runner.invoke(cli.app, ["mcp", "serve", "--private"])
+    assert result.exit_code == 1
+    assert "--private requires --content" in result.output

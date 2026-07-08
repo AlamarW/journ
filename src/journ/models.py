@@ -30,3 +30,4 @@ class JournalEntry:
     updated_at: str
     word_count: int | None = None
     started_at: str | None = None
+    private: bool = False

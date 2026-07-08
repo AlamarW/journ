@@ -7,17 +7,17 @@ from __future__ import annotations
 import getpass
 import os
 import subprocess
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
-from journ import analytics, config, content, crypto, ui
+from journ import analytics, config, content, crypto, mcp_keychain, ui
 from journ.builtin_editor import run_builtin_editor
 from journ.content import DecryptedEntry
 from journ.db import Database
 from journ.models import JournalEntry, Profile
 from journ.streak import update_streak
-from journ.words import count_words, words_per_minute
+from journ.words import count_words, format_elapsed, words_per_minute
 
 
 class PassphraseError(Exception):
@@ -112,8 +112,14 @@ def _encode_entry(text: str, key: bytes | None) -> tuple[bytes, bool]:
     return text.encode("utf-8"), False
 
 
-def _all_decrypted(db: Database, profile: Profile, key: bytes | None) -> list[DecryptedEntry]:
-    entries = db.all_entries()
+def all_decrypted(
+    db: Database, profile: Profile, key: bytes | None, entries: list[JournalEntry] | None = None
+) -> list[DecryptedEntry]:
+    """Decrypts entries into DecryptedEntry text. Defaults to every entry in the journal, but
+    accepts a pre-filtered subset (see filter_private) so callers can exclude entries from
+    decryption entirely rather than decrypting everything and filtering the result."""
+    if entries is None:
+        entries = db.all_entries()
     if not entries:
         return []
     if key is None:
@@ -130,7 +136,20 @@ def _all_decrypted(db: Database, profile: Profile, key: bytes | None) -> list[De
     ]
 
 
-def write_today_entry(db: Database) -> None:
+def filter_private(entries: list[JournalEntry], include_private: bool) -> list[JournalEntry]:
+    """Excludes private entries unless include_private=True. Pure and DB/crypto-free so
+    Tier-3 gating can be tested without touching the database."""
+    if include_private:
+        return entries
+    return [e for e in entries if not e.private]
+
+
+def write_today_entry(db: Database, private: bool | None = None) -> None:
+    """private=None preserves today's existing entry's current private flag if editing one
+    (False for a new entry) -- an explicit bool always overrides. For the built-in editor this
+    is only the *initial* toggle state, since ctrl+p can change it during the session; for an
+    external $EDITOR there's no interactive UI to toggle it mid-session, so this is the only
+    control."""
     profile, key = ensure_profile(db)
     if key is None:
         key = unlock(profile)
@@ -138,6 +157,9 @@ def write_today_entry(db: Database) -> None:
     today = date.today()
     existing = db.get_entry(today)
     existing_text = _decode_entry(db, existing, key) if existing else ""
+    initial_private = existing.private if existing else False
+    if private is not None:
+        initial_private = private
 
     editor = config.get_editor()
     used_builtin = editor == config.BUILTIN_EDITOR
@@ -146,11 +168,14 @@ def write_today_entry(db: Database) -> None:
     if used_builtin:
         # Held in memory only -- unlike the external-editor path below, this never writes
         # plaintext to disk.
-        text = run_builtin_editor(existing_text, profile.writing_goal)
-        if text is None:
+        result = run_builtin_editor(existing_text, profile.writing_goal, initial_private)
+        if result is None:
             print("Discarded -- no changes saved.")
             return
+        text = result.text
+        is_private = result.private
     else:
+        is_private = initial_private
         config.journ_tmp_dir.mkdir(parents=True, exist_ok=True)
         scratch_path = config.journ_tmp_dir / f"{today.isoformat()}.txt"
 
@@ -179,39 +204,45 @@ def write_today_entry(db: Database) -> None:
     goal_met = word_count >= profile.writing_goal
     wpm = words_per_minute(word_count, elapsed)
 
-    words_before, entries_before = db.aggregate_totals()
+    # The editor session above can run for an arbitrarily long time, so only the final
+    # read-totals -> write -> streak-update sequence is wrapped atomically -- holding the
+    # write lock for the whole editing session would block any other writer (e.g. an MCP
+    # save_conversation_entry call) for as long as the user is typing.
+    with db.locked_for_write():
+        words_before, entries_before = db.aggregate_totals()
 
-    content_bytes, is_encrypted = _encode_entry(text, key)
-    db.upsert_entry(
-        JournalEntry(
-            entry_date=today,
-            content=content_bytes,
-            is_encrypted=is_encrypted,
-            words_per_minute=wpm,
-            accomplished_goal=goal_met,
-            updated_at=datetime.now().isoformat(),
-            word_count=word_count,
-            started_at=start_time.isoformat(),
+        content_bytes, is_encrypted = _encode_entry(text, key)
+        db.upsert_entry(
+            JournalEntry(
+                entry_date=today,
+                content=content_bytes,
+                is_encrypted=is_encrypted,
+                words_per_minute=wpm,
+                accomplished_goal=goal_met,
+                updated_at=datetime.now().isoformat(),
+                word_count=word_count,
+                started_at=start_time.isoformat(),
+                private=is_private,
+            )
         )
-    )
 
-    words_after, entries_after = db.aggregate_totals()
+        words_after, entries_after = db.aggregate_totals()
 
-    new_streak, new_last_entry_date = update_streak(
-        profile.streak, profile.streak_last_entry_date, today, goal_met
-    )
-    db.update_streak(new_streak, new_last_entry_date)
-    if new_streak > profile.longest_streak:
-        db.update_longest_streak(new_streak)
+        new_streak, new_last_entry_date = update_streak(
+            profile.streak, profile.streak_last_entry_date, today, goal_met
+        )
+        db.update_streak(new_streak, new_last_entry_date)
+        if new_streak > profile.longest_streak:
+            db.update_longest_streak(new_streak)
 
-    milestones = analytics.detect_milestones(
-        words_before=words_before,
-        words_after=words_after,
-        entries_before=entries_before,
-        entries_after=entries_after,
-        streak_before=profile.streak,
-        streak_after=new_streak,
-    )
+        milestones = analytics.detect_milestones(
+            words_before=words_before,
+            words_after=words_after,
+            entries_before=entries_before,
+            entries_after=entries_after,
+            streak_before=profile.streak,
+            streak_after=new_streak,
+        )
 
     ui.print_write_summary(
         word_count=word_count,
@@ -222,6 +253,136 @@ def write_today_entry(db: Database) -> None:
         streak=new_streak,
         streak_changed=(new_streak != profile.streak),
         skip_goal_line=used_builtin,
+        milestones=milestones,
+        private=is_private,
+    )
+
+
+@dataclass
+class ConversationTurn:
+    role: str  # "user" or "assistant"
+    text: str
+
+
+@dataclass
+class ConversationSaveResult:
+    entry_date: date
+    word_count: int
+    accomplished_goal: bool
+    streak: int
+    streak_changed: bool
+    milestones: list[tuple[str, int]]
+
+
+def _format_transcript(turns: list[ConversationTurn]) -> str:
+    speaker = {"user": "You", "assistant": "Assistant"}
+    return "\n\n".join(f"{speaker.get(t.role, t.role)}: {t.text}" for t in turns)
+
+
+def save_conversation_entry(
+    db: Database,
+    entry_date: date,
+    turns: list[ConversationTurn],
+    key: bytes | None,
+    private: bool | None = None,
+) -> ConversationSaveResult:
+    """Tier-2 MCP write action: appends a conversation transcript to entry_date's entry
+    (creating it if absent). The stored content is the full transcript (both sides), but only
+    the user's own turns count toward word_count/goal/streak -- the assistant's words never
+    do. words_per_minute is never computed or overwritten here (no meaningful typing-speed
+    signal in a back-and-forth conversation); if merging into an entry that already has a real
+    value from an earlier editor session, it's preserved untouched.
+
+    private=None preserves whatever the entry's current private flag is (False for a new
+    entry) rather than defaulting to False -- an explicit bool always overrides.
+
+    Streak/longest-streak are only updated when entry_date is today: this is the only write
+    path that can target a past date, and streak.update_streak's day-over-day logic isn't
+    built for backdating, so a saved conversation about a past day never affects your streak.
+    Word/entry milestones (pure aggregate-total deltas) still fire regardless of date.
+
+    key must already be resolved by the caller -- this never calls unlock() itself, since an
+    MCP tool call must never block on an interactive passphrase prompt.
+    """
+    with db.locked_for_write():
+        profile = db.get_profile()
+        if profile is None:
+            raise ValueError(
+                "No profile exists yet -- run `journ` once to finish first-time setup."
+            )
+
+        existing = db.get_entry(entry_date)
+        existing_text = _decode_entry(db, existing, key) if existing else ""
+        # _decode_entry backfills existing.word_count in place if it was None -- read it only
+        # after that call, not before.
+        existing_word_count = existing.word_count if existing else 0
+
+        user_text = "\n\n".join(t.text for t in turns if t.role == "user")
+        new_user_words = count_words(user_text)
+        word_count = existing_word_count + new_user_words
+
+        transcript_text = _format_transcript(turns)
+        full_text = (
+            f"{existing_text}\n\n{transcript_text}" if existing_text else transcript_text
+        )
+
+        goal_met = word_count >= profile.writing_goal
+        wpm = existing.words_per_minute if existing else None
+
+        if private is None:
+            is_private = existing.private if existing else False
+        else:
+            is_private = private
+
+        started_at = (
+            existing.started_at
+            if existing and existing.started_at
+            else datetime.now().isoformat()
+        )
+
+        words_before, entries_before = db.aggregate_totals()
+        content_bytes, is_encrypted = _encode_entry(full_text, key)
+        db.upsert_entry(
+            JournalEntry(
+                entry_date=entry_date,
+                content=content_bytes,
+                is_encrypted=is_encrypted,
+                words_per_minute=wpm,
+                accomplished_goal=goal_met,
+                updated_at=datetime.now().isoformat(),
+                word_count=word_count,
+                started_at=started_at,
+                private=is_private,
+            )
+        )
+        words_after, entries_after = db.aggregate_totals()
+
+        streak_after = profile.streak
+        streak_changed = False
+        if entry_date == date.today():
+            streak_after, new_last_entry_date = update_streak(
+                profile.streak, profile.streak_last_entry_date, entry_date, goal_met
+            )
+            db.update_streak(streak_after, new_last_entry_date)
+            if streak_after > profile.longest_streak:
+                db.update_longest_streak(streak_after)
+            streak_changed = streak_after != profile.streak
+
+        milestones = analytics.detect_milestones(
+            words_before=words_before,
+            words_after=words_after,
+            entries_before=entries_before,
+            entries_after=entries_after,
+            streak_before=profile.streak,
+            streak_after=streak_after,
+        )
+
+    return ConversationSaveResult(
+        entry_date=entry_date,
+        word_count=word_count,
+        accomplished_goal=goal_met,
+        streak=streak_after,
+        streak_changed=streak_changed,
         milestones=milestones,
     )
 
@@ -351,102 +512,264 @@ def _reencrypt_all(
     db.set_passphrase(new_salt, new_canary)
 
 
+def mcp_unlock(db: Database) -> None:
+    """Caches the derived passphrase key in the OS credential store, so a headlessly-spawned
+    `journ mcp serve --content` can decrypt content without an interactive prompt."""
+    profile, _key = ensure_profile(db)
+    if not profile.has_passphrase:
+        print(
+            "This journal has no passphrase -- nothing to cache. `journ mcp serve --content` "
+            "will work without unlocking."
+        )
+        return
+    key = unlock(profile)
+    try:
+        mcp_keychain.cache_key(key)
+    except mcp_keychain.KeychainError as exc:
+        print(f"Could not cache the key: {exc}")
+        return
+    print("Key cached indefinitely in your OS credential store -- run `journ mcp lock` when done.")
+
+
+def mcp_lock() -> None:
+    mcp_keychain.clear_cached_key()
+    print("Cached key removed.")
+
+
+def mcp_status() -> None:
+    cached_at = mcp_keychain.get_cached_at()
+    if cached_at is None:
+        print(
+            "No key is currently cached. Run `journ mcp unlock` before using "
+            "`journ mcp serve --content` on an encrypted journal."
+        )
+        return
+    elapsed_str = format_elapsed(datetime.now() - cached_at)
+    print(
+        f"A key has been cached for {elapsed_str}. Run `journ mcp lock` when you're done "
+        "using content-tier MCP tools."
+    )
+
+
 # --- metadata-only analytics (no passphrase needed once word_count/started_at are backfilled) ---
+#
+# Each of these is split into a get_* data function (pure over db.all_entries()/get_profile(),
+# safe to call from an MCP tool with no key at all) and a thin show_*/action print wrapper used
+# by the CLI/shell. The get_* functions deliberately call db.get_profile() directly rather than
+# ensure_profile(db), since ensure_profile can trigger an interactive first-run input() prompt
+# that must never be reachable from a non-interactive MCP tool call.
+
+
+@dataclass
+class StatsTotals:
+    total_words: int
+    entry_count: int
+    avg_words_per_minute: float
+
+
+def get_calendar_data(
+    db: Database, weeks: int = 12, today: date | None = None
+) -> tuple[list[list[analytics.CalendarDay]], float]:
+    entries = db.all_entries()
+    grid = analytics.build_calendar(entries, weeks=weeks, today=today)
+    score = analytics.consistency_score(entries, today=today)
+    return grid, score
 
 
 def show_calendar(db: Database) -> None:
-    _profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    grid = analytics.build_calendar(entries)
-    score = analytics.consistency_score(entries)
+    ensure_profile(db)
+    grid, score = get_calendar_data(db)
     ui.print_calendar(grid, consistency=score)
 
 
+def get_trends_data(
+    db: Database, days: int, today: date | None = None
+) -> list[analytics.TrendPoint]:
+    return analytics.trend_series(db.all_entries(), days=days, today=today)
+
+
 def show_trends(db: Database, days: int) -> None:
-    _profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    points = analytics.trend_series(entries, days=days)
-    ui.print_trends(points)
+    ensure_profile(db)
+    ui.print_trends(get_trends_data(db, days))
+
+
+def get_records_data(db: Database) -> analytics.Records | None:
+    profile = db.get_profile()
+    if profile is None:
+        return None
+    return analytics.personal_records(db.all_entries(), profile)
 
 
 def show_records(db: Database) -> None:
-    profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    records = analytics.personal_records(entries, profile)
-    ui.print_records(records)
+    ensure_profile(db)
+    ui.print_records(get_records_data(db))
+
+
+def get_patterns_data(db: Database) -> analytics.PatternSummary:
+    return analytics.writing_pattern(db.all_entries())
 
 
 def show_patterns(db: Database) -> None:
-    _profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    pattern = analytics.writing_pattern(entries)
-    ui.print_patterns(pattern)
+    ensure_profile(db)
+    ui.print_patterns(get_patterns_data(db))
+
+
+def get_goal_suggestion(
+    db: Database, days: int = 30, today: date | None = None
+) -> tuple[int | None, int | None]:
+    """Returns (current_goal, suggested_or_None); both None if no profile exists yet."""
+    profile = db.get_profile()
+    if profile is None:
+        return None, None
+    suggestion = analytics.suggest_goal(
+        db.all_entries(), profile.writing_goal, days=days, today=today
+    )
+    return profile.writing_goal, suggestion
 
 
 def suggest_goal_action(db: Database) -> None:
-    profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    suggestion = analytics.suggest_goal(entries, profile.writing_goal)
-    ui.print_goal_suggestion(current_goal=profile.writing_goal, suggested=suggestion)
+    ensure_profile(db)
+    current, suggestion = get_goal_suggestion(db)
+    ui.print_goal_suggestion(current_goal=current, suggested=suggestion)
+
+
+def get_streak_data(db: Database) -> tuple[int, int]:
+    """Returns (streak, longest_streak); (0, 0) if no profile exists yet."""
+    profile = db.get_profile()
+    if profile is None:
+        return 0, 0
+    return profile.streak, profile.longest_streak
+
+
+def get_current_goal(db: Database) -> int | None:
+    profile = db.get_profile()
+    return profile.writing_goal if profile else None
+
+
+def get_stats_totals(db: Database) -> StatsTotals:
+    """Zero-decryption stats: unlike show_stats, this never lazily unlocks to backfill
+    word_count on legacy entries -- it only reads what's already in the DB."""
+    total_words, entry_count = db.aggregate_totals()
+    wpm_values = [e.words_per_minute for e in db.all_entries() if e.words_per_minute]
+    avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
+    return StatsTotals(
+        total_words=total_words, entry_count=entry_count, avg_words_per_minute=avg_wpm
+    )
 
 
 # --- content-based features (need to decrypt entry text) ---
 
 
+def get_word_frequency(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    entries: list[JournalEntry] | None = None,
+    top_n: int = 20,
+) -> list[tuple[str, int]]:
+    decrypted = all_decrypted(db, profile, key, entries=entries)
+    return content.word_frequency([e.text for e in decrypted], top_n=top_n)
+
+
 def show_word_frequency(db: Database) -> None:
     profile, key = ensure_profile(db)
-    decrypted = _all_decrypted(db, profile, key)
-    if not decrypted:
+    freq = get_word_frequency(db, profile, key)
+    if not freq:
         print("You haven't written anything yet.")
         return
-    freq = content.word_frequency([e.text for e in decrypted])
     ui.print_word_frequency(freq)
+
+
+def get_search_results(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    query: str,
+    entries: list[JournalEntry] | None = None,
+) -> list[tuple[date, str]]:
+    decrypted = all_decrypted(db, profile, key, entries=entries)
+    return content.search_matches(decrypted, query)
 
 
 def search_journal(db: Database, query: str) -> None:
     profile, key = ensure_profile(db)
-    decrypted = _all_decrypted(db, profile, key)
-    results = content.search_matches(decrypted, query)
-    ui.print_search_results(query, results)
+    ui.print_search_results(query, get_search_results(db, profile, key, query))
 
 
-def show_on_this_day(db: Database) -> None:
-    profile, key = ensure_profile(db)
-    today = date.today()
-    matches = [
+def on_this_day_matches(
+    entries: list[JournalEntry], today: date | None = None
+) -> list[JournalEntry]:
+    today = today or date.today()
+    return [
         e
-        for e in db.all_entries()
+        for e in entries
         if e.entry_date.month == today.month
         and e.entry_date.day == today.day
         and e.entry_date.year != today.year
     ]
-    if not matches:
-        print("No entries from this day in previous years yet.")
+
+
+def get_on_this_day(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    today: date | None = None,
+    entries: list[JournalEntry] | None = None,
+) -> list[DecryptedEntry]:
+    if entries is None:
+        entries = on_this_day_matches(db.all_entries(), today=today)
+    return all_decrypted(db, profile, key, entries=entries)
+
+
+def show_on_this_day(db: Database) -> None:
+    profile, key = ensure_profile(db)
+    ui.print_on_this_day(get_on_this_day(db, profile, key))
+
+
+def get_entry_by_date(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    entry_date: date,
+    include_private: bool = False,
+) -> DecryptedEntry | None:
+    """Single-entry read. Checks entry.private *before* decrypting, so a private entry
+    queried without Tier-3 access never triggers unlock() at all -- preserve this ordering
+    under any future refactor, it's a real privacy guarantee, not just style."""
+    entry = db.get_entry(entry_date)
+    if entry is None:
+        return None
+    if entry.private and not include_private:
+        return None
+    decrypted = all_decrypted(db, profile, key, entries=[entry])
+    return decrypted[0] if decrypted else None
+
+
+def set_private(db: Database, entry_date: date, private: bool) -> None:
+    entry = db.get_entry(entry_date)
+    if entry is None:
+        print(f"No entry found for {entry_date.isoformat()}.")
         return
-    if key is None:
-        key = unlock(profile)
-    decrypted = [
-        DecryptedEntry(
-            entry_date=entry.entry_date,
-            text=(text := _decode_entry(db, entry, key)),
-            word_count=entry.word_count if entry.word_count is not None else count_words(text),
-            words_per_minute=entry.words_per_minute,
-            accomplished_goal=entry.accomplished_goal,
-        )
-        for entry in matches
-    ]
-    ui.print_on_this_day(decrypted)
+    db.set_private(entry_date, private)
+    state = "private" if private else "no longer private"
+    print(f"Entry for {entry_date.isoformat()} is now {state}.")
 
 
-def export_journal(db: Database, output_path: Path, export_format: str) -> None:
+def export_journal(
+    db: Database, output_path: Path, export_format: str, include_private: bool = False
+) -> None:
     if export_format not in ("md", "json"):
         print("Format must be 'md' or 'json'.")
         return
 
     profile, key = ensure_profile(db)
-    entries = db.all_entries()
-    if not entries:
+    all_entries = db.all_entries()
+    if not all_entries:
         print("You haven't written anything yet.")
+        return
+    entries = filter_private(all_entries, include_private)
+    if not entries:
+        print("All your entries are private -- pass --include-private to export them anyway.")
         return
 
     if profile.has_passphrase:
@@ -462,7 +785,7 @@ def export_journal(db: Database, output_path: Path, export_format: str) -> None:
             print("Export cancelled.")
             return
 
-    decrypted = _all_decrypted(db, profile, key)
+    decrypted = all_decrypted(db, profile, key, entries=entries)
     if export_format == "md":
         text = content.format_markdown(decrypted)
     else:

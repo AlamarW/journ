@@ -6,8 +6,9 @@ single implementation shared with the one-shot CLI subcommands in cli.py.
 from __future__ import annotations
 
 import cmd
+from collections.abc import Callable
+from datetime import date
 from pathlib import Path
-from typing import Callable
 
 from journ import actions, ui
 from journ.actions import PassphraseError
@@ -17,7 +18,7 @@ from journ.terminal import clear_screen
 # Grouped for the custom `help` overview -- deliberately excludes the do_journ/do_EOF
 # aliases, which exist for backward compatibility and Ctrl+D but would just be noise here.
 _HELP_GROUPS = [
-    ("Write", ["write", "stats", "streak", "last", "goal"]),
+    ("Write", ["write", "private", "stats", "streak", "last", "goal"]),
     (
         "Analytics",
         [
@@ -47,10 +48,34 @@ class JournalingShell(cmd.Cmd):
             print(str(exc))
 
     def do_write(self, line):
-        "Write today's journal entry in your text editor"
-        self._run(lambda: actions.write_today_entry(self.db))
+        "Write today's entry: 'write', 'write private', or 'write unprivate'"
+        arg = line.strip().lower()
+        if arg == "":
+            private = None
+        elif arg == "private":
+            private = True
+        elif arg == "unprivate":
+            private = False
+        else:
+            print("Usage: write  |  write private  |  write unprivate")
+            return
+        self._run(lambda: actions.write_today_entry(self.db, private=private))
 
     do_journ = do_write  # backward-compatible alias for the old command name
+
+    def do_private(self, line):
+        "Flag or unflag an entry as private: 'private 2026-07-01' or 'private 2026-07-01 unset'"
+        parts = line.strip().split()
+        if not parts:
+            print("Usage: private <date> [unset]")
+            return
+        try:
+            entry_date = date.fromisoformat(parts[0])
+        except ValueError:
+            print("Date must be in YYYY-MM-DD format.")
+            return
+        unset = len(parts) > 1 and parts[1].lower() == "unset"
+        self._run(lambda: actions.set_private(self.db, entry_date, not unset))
 
     def do_streak(self, line):
         "Show your current streak"
@@ -119,14 +144,21 @@ class JournalingShell(cmd.Cmd):
         self._run(lambda: actions.show_on_this_day(self.db))
 
     def do_export(self, line):
-        "Export all entries: 'export path/to/file.md' or 'export path/to/file.json'"
+        "Export entries: 'export path/to/file.md [json] [include-private]'"
         parts = line.strip().split()
         if not parts:
-            print("Usage: export <path> [md|json]")
+            print("Usage: export <path> [md|json] [include-private]")
             return
         output_path = Path(parts[0])
-        export_format = parts[1] if len(parts) > 1 else "md"
-        self._run(lambda: actions.export_journal(self.db, output_path, export_format))
+        rest = parts[1:]
+        include_private = "include-private" in rest
+        formats = [p for p in rest if p != "include-private"]
+        export_format = formats[0] if formats else "md"
+        self._run(
+            lambda: actions.export_journal(
+                self.db, output_path, export_format, include_private=include_private
+            )
+        )
 
     def do_editor(self, line):
         "Show or change your editor: 'editor' or 'editor set' (includes journ's built-in one)"

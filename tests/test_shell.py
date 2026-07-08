@@ -1,3 +1,6 @@
+from datetime import date
+
+from journ.models import JournalEntry
 from journ.shell import _HELP_GROUPS, JournalingShell
 
 
@@ -30,6 +33,37 @@ def test_help_with_argument_shows_single_command_detail(db, capsys):
     shell.do_help("write")
 
     output = capsys.readouterr().out
-    assert "Write today's journal entry" in output
+    assert "Write today's entry" in output
     # Shouldn't fall through to the full grouped table for a specific command.
     assert "Analytics" not in output
+
+
+def test_do_private_marks_and_unmarks_entry(db, capsys):
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x",
+        )
+    )
+    shell = JournalingShell(db)
+
+    shell.do_private("2026-07-01")
+    assert db.get_entry(date(2026, 7, 1)).private is True
+    assert "now private" in capsys.readouterr().out
+
+    shell.do_private("2026-07-01 unset")
+    assert db.get_entry(date(2026, 7, 1)).private is False
+    assert "no longer private" in capsys.readouterr().out
+
+
+def test_do_private_rejects_bad_date(db, capsys):
+    shell = JournalingShell(db)
+    shell.do_private("not-a-date")
+    assert "YYYY-MM-DD" in capsys.readouterr().out
+
+
+def test_do_write_rejects_unknown_argument(db, capsys):
+    db.create_profile(writing_goal=750)
+    shell = JournalingShell(db)
+    shell.do_write("nonsense")
+    assert "Usage: write" in capsys.readouterr().out

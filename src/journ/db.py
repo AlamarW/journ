@@ -8,6 +8,7 @@ of the user's real ~/.journ/journal.db.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 
@@ -29,7 +30,8 @@ CREATE TABLE IF NOT EXISTS journal_entry (
     is_encrypted INTEGER NOT NULL,
     words_per_minute REAL,
     accomplished_goal INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    private INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -38,7 +40,7 @@ _PROFILE_COLUMNS = (
 )
 _ENTRY_COLUMNS = (
     "entry_date, content, is_encrypted, words_per_minute, accomplished_goal, updated_at, "
-    "word_count, started_at"
+    "word_count, started_at, private"
 )
 
 
@@ -68,6 +70,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "UPDATE profile SET longest_streak = streak WHERE longest_streak < streak"
         )
 
+    if not _column_exists(conn, "journal_entry", "private"):
+        conn.execute("ALTER TABLE journal_entry ADD COLUMN private INTEGER NOT NULL DEFAULT 0")
+
     conn.commit()
 
 
@@ -76,6 +81,11 @@ class Database:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.path)
+        # WAL lets readers proceed without blocking a writer; busy_timeout makes a blocked
+        # writer retry for a few seconds instead of immediately raising "database is locked"
+        # -- both matter once an MCP server process can be running alongside interactive use.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
         _migrate(self.conn)
@@ -161,11 +171,12 @@ class Database:
 
     def upsert_entry(self, entry: JournalEntry) -> None:
         self.conn.execute(
-            f"INSERT INTO journal_entry ({_ENTRY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            f"INSERT INTO journal_entry ({_ENTRY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(entry_date) DO UPDATE SET content=excluded.content, "
             "is_encrypted=excluded.is_encrypted, words_per_minute=excluded.words_per_minute, "
             "accomplished_goal=excluded.accomplished_goal, updated_at=excluded.updated_at, "
-            "word_count=excluded.word_count, started_at=excluded.started_at",
+            "word_count=excluded.word_count, started_at=excluded.started_at, "
+            "private=excluded.private",
             (
                 entry.entry_date.isoformat(),
                 entry.content,
@@ -175,6 +186,7 @@ class Database:
                 entry.updated_at,
                 entry.word_count,
                 entry.started_at,
+                int(entry.private),
             ),
         )
 
@@ -185,6 +197,30 @@ class Database:
             "UPDATE journal_entry SET word_count = ? WHERE entry_date = ?",
             (word_count, entry_date.isoformat()),
         )
+
+    def set_private(self, entry_date: date, private: bool) -> None:
+        self.conn.execute(
+            "UPDATE journal_entry SET private = ? WHERE entry_date = ?",
+            (int(private), entry_date.isoformat()),
+        )
+
+    @contextmanager
+    def locked_for_write(self):
+        """Wraps a read-existing -> merge -> write sequence in an immediate-mode transaction,
+        so the write lock is acquired before the read happens instead of at the first write
+        statement. Closes the race window where two writers (e.g. an MCP server process and
+        an interactive `journ write`) both read stale state and the second silently clobbers
+        the first. Commits any transaction already left open by an earlier statement in this
+        session first, since sqlite3 refuses to BEGIN inside an existing transaction."""
+        if self.conn.in_transaction:
+            self.conn.commit()
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
 
     def aggregate_totals(self) -> tuple[int, int]:
         """Returns (total_words, entry_count) from stored word_count metadata only -- no
@@ -227,6 +263,7 @@ class Database:
             updated_at,
             word_count,
             started_at,
+            private,
         ) = row
         return JournalEntry(
             entry_date=date.fromisoformat(entry_date),
@@ -237,4 +274,5 @@ class Database:
             updated_at=updated_at,
             word_count=word_count,
             started_at=started_at,
+            private=bool(private),
         )

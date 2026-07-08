@@ -1,6 +1,8 @@
 import sqlite3
 from datetime import date
 
+import pytest
+
 from journ.db import Database
 from journ.models import JournalEntry
 
@@ -105,6 +107,43 @@ def test_latest_and_all_entries(db):
     assert [e.content for e in db.all_entries()] == [b"first", b"second", b"third"]
 
 
+def test_new_entry_defaults_to_not_private(db):
+    entry = JournalEntry(
+        entry_date=date(2026, 7, 1),
+        content=b"hello world",
+        is_encrypted=False,
+        words_per_minute=42.0,
+        accomplished_goal=True,
+        updated_at="2026-07-01T12:00:00",
+    )
+    db.upsert_entry(entry)
+    assert db.get_entry(date(2026, 7, 1)).private is False
+
+
+def test_set_private_marks_and_unmarks_entry(db):
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x",
+        )
+    )
+    db.set_private(date(2026, 7, 1), True)
+    assert db.get_entry(date(2026, 7, 1)).private is True
+
+    db.set_private(date(2026, 7, 1), False)
+    assert db.get_entry(date(2026, 7, 1)).private is False
+
+
+def test_upsert_entry_preserves_private_flag(db):
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"draft", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x", private=True,
+        )
+    )
+    assert db.get_entry(date(2026, 7, 1)).private is True
+
+
 def test_new_entries_have_word_count_and_started_at(db):
     entry = JournalEntry(
         entry_date=date(2026, 7, 1),
@@ -207,6 +246,7 @@ def test_migration_adds_columns_and_backfills_existing_v2_database(tmp_path):
         entry = db.get_entry(date(2026, 7, 1))
         assert entry.word_count is None  # left NULL -- would need decryption to backfill
         assert entry.started_at == "2026-07-01T20:00:00"  # backfilled from updated_at
+        assert entry.private is False  # ADD COLUMN ... DEFAULT 0 backfills correctly
     finally:
         db.conn.close()
 
@@ -218,3 +258,66 @@ def test_migration_is_idempotent_on_an_already_migrated_database(tmp_path):
 
     with Database(path) as db2:  # reopening should not error or duplicate columns
         assert db2.get_profile().writing_goal == 750
+
+
+def test_locked_for_write_blocks_concurrent_writer(tmp_path):
+    path = tmp_path / "journal.db"
+    db1 = Database(path)
+    db2 = Database(path)
+    db2.conn.execute("PRAGMA busy_timeout=100")  # keep the test fast; still long enough
+    # for BEGIN IMMEDIATE to reliably observe db1's lock rather than racing it.
+    try:
+        db1.upsert_entry(
+            JournalEntry(
+                entry_date=date(2026, 7, 1), content=b"first", is_encrypted=False,
+                words_per_minute=None, accomplished_goal=False, updated_at="x",
+            )
+        )
+        db1.conn.commit()
+
+        with db1.locked_for_write():
+            existing = db1.get_entry(date(2026, 7, 1))
+            # A second connection trying to write while db1 holds the immediate lock should
+            # be blocked until db1 commits (via busy_timeout), not silently race ahead.
+            with pytest.raises(sqlite3.OperationalError):
+                db2.conn.execute("BEGIN IMMEDIATE")
+                db2.conn.execute(
+                    "UPDATE journal_entry SET content = ? WHERE entry_date = ?",
+                    (b"racing write", date(2026, 7, 1).isoformat()),
+                )
+                db2.conn.execute("COMMIT")
+
+            db1.upsert_entry(
+                JournalEntry(
+                    entry_date=date(2026, 7, 1), content=existing.content + b" updated",
+                    is_encrypted=False, words_per_minute=None, accomplished_goal=False,
+                    updated_at="x",
+                )
+            )
+
+        assert db1.get_entry(date(2026, 7, 1)).content == b"first updated"
+    finally:
+        db1.conn.close()
+        db2.conn.close()
+
+
+def test_locked_for_write_rolls_back_on_exception(db):
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"original", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x",
+        )
+    )
+
+    with pytest.raises(ValueError):
+        with db.locked_for_write():
+            db.upsert_entry(
+                JournalEntry(
+                    entry_date=date(2026, 7, 1), content=b"should not persist",
+                    is_encrypted=False, words_per_minute=None, accomplished_goal=False,
+                    updated_at="x",
+                )
+            )
+            raise ValueError("boom")
+
+    assert db.get_entry(date(2026, 7, 1)).content == b"original"
