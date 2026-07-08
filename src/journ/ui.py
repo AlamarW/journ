@@ -41,9 +41,9 @@ def print_welcome() -> None:
     # rectangle), so left-pad them to a common width before joining or the box columns
     # drift out of alignment row to row.
     pen_width = max(len(line) for line in _PEN)
-    # zip() without strict= for py3.9 compatibility -- _PEN and _BANNER_BOX are both
-    # fixed-length constants above, so length mismatch isn't a real runtime risk.
-    lines = [pen.ljust(pen_width) + "  " + box for pen, box in zip(_PEN, _BANNER_BOX)]
+    lines = [
+        pen.ljust(pen_width) + "  " + box for pen, box in zip(_PEN, _BANNER_BOX, strict=True)
+    ]
     lines[1] = lines[1].replace("journ", "[bold cyan]journ[/bold cyan]")
     lines[2] = lines[2].replace("a terminal journal", "[dim]a terminal journal[/dim]")
     console.print("\n".join(lines))

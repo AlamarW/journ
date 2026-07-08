@@ -6,8 +6,8 @@ single implementation shared with the one-shot CLI subcommands in cli.py.
 from __future__ import annotations
 
 import cmd
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from journ import actions, ui
 from journ.actions import PassphraseError

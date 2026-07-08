@@ -6,7 +6,6 @@ bars, or scripting -- they share their implementation with the shell via actions
 """
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -90,7 +89,7 @@ def last() -> None:
 
 
 @app.command()
-def goal(new_goal: Optional[int] = typer.Argument(None)) -> None:
+def goal(new_goal: int | None = typer.Argument(None)) -> None:
     """Show or set your daily writing goal."""
     with _open_db() as db:
         _run(lambda: actions.set_goal(db, new_goal))
