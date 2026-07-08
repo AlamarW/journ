@@ -8,29 +8,88 @@ Since conception of the project, I've deviated a bit from the clone of 750words.
 
 It's helpful to have a word counter in your text editor of choice, but journ will take care of that for you if not (just not as elegantly)
 
+## Installation
 
-The Completion of below will make journ official v1
+journ uses [uv](https://docs.astral.sh/uv/) for packaging.
+
+```sh
+git clone https://github.com/AlamarW/journ.git
+cd journ
+uv sync
+uv run journ
+```
+
+`journ` also works on native Windows/PowerShell, not just WSL. On first run, if no `EDITOR`
+environment variable is set, Windows users get a one-time picker to choose a text editor
+(Notepad, VS Code, Notepad++, Sublime, Vim, or a custom command); the choice is remembered
+for next time.
+
+## Usage
+
+Running `journ` with no arguments opens the interactive shell, exactly like before:
+
+```
+$ journ
+(journ) write
+(journ) stats
+(journ) streak
+(journ) exit
+```
+
+Each of those is also available as a scriptable one-shot command, so you don't have to open
+the shell just to check something:
+
+| Command                            | What it does                                          |
+| ----------------------------------- | ------------------------------------------------------ |
+| `journ` / `journ shell`             | Open the interactive `(journ)` shell                   |
+| `journ write`                       | Write today's entry in your editor                     |
+| `journ stats`                       | Average words-per-minute and total words written       |
+| `journ streak`                      | Current streak                                         |
+| `journ last`                        | Word count of your most recent entry                   |
+| `journ goal` / `journ goal 750`     | Show or set your daily writing goal                     |
+| `journ passphrase set/change/remove`| Manage the passphrase that encrypts your entries        |
+
+On first run, journ asks for your daily writing goal and whether you'd like to set a
+passphrase.
+
+## Your entries, protected
+
+journ runs entirely on your machine — there's no account system and no server. If you set a
+passphrase, it doesn't just gate access to the app: a key derived from it (PBKDF2-HMAC-SHA256
++ Fernet/AES) actually encrypts your entry text before it's written to
+`~/.journ/journal.db`. Anyone reading the raw database file without your passphrase sees only
+ciphertext. There's no recovery if you forget your passphrase, and metadata that isn't
+sensitive on its own (streak, writing goal, entry dates) is stored unencrypted.
+
+The one unavoidable exposure: while your editor has today's entry open, it's sitting in a
+plaintext temp file under `~/.journ/tmp`, deleted as soon as you close the editor — external
+editors need a real file on disk to edit.
+
+## Development
+
+```sh
+uv sync
+uv run pytest
+uv run ruff check .
+```
+
+## v2 note
+
+Versions before 2.0 used a multi-user login system where a password only gated the app's
+login screen, not the stored entries themselves — anyone with file access to `journal.db`
+could read entries in plaintext regardless. v2 drops multi-user support (this is a
+single-machine tool; there's no real case for multiple accounts) in favor of one local
+profile with an optional passphrase that genuinely encrypts your entries. This is a breaking
+schema change: old `journal.db` files from v1 aren't migrated, though nothing is deleted —
+old data just sits unused in old tables in the same file.
+
 ### To Do List
 
-- [X] Fully implement daily tmp file for editing
-- [x] User login
-  - [x] Prevent journaling to anyone logged out
-  - [x] Journal Session logging
-  - [x] User goals fully implemented
-  - [x] Storage of data based on User Login
-  - [x] sqlite database uses stored user idea
-    - [x] User can update their goals
+- [x] Fully implement daily tmp file for editing
 - [x] Journaling streak
 - [x] Implement default to user defined text editor
-- [x] Make password optional
 - [x] Add current journ data (word count mostly)
-
-### Bug List
-- [x] Changing login system created error when user says they've logged in if db is empty
-- [x] System allows for overwriting of user names
-- [x] Current implementation creates difficult loop if register process starts and user isn't sure they want the selected login, not sure how to fix right now. Will have to replace the recursive calls with while loops.
-- [x] journal sessions are not currently tied to user/any user can access any other users' current journ
-- [x] todays_journ breaks when user hasn't journaled yet
-- [x] Streak incremented multiple times a day 
-- [x] Registration followed by journ breaks system
-- [x] other users can still access another's daily journ
+- [x] Windows/PowerShell-native support (not just WSL)
+- [x] Passphrase-based entry encryption
+- [x] Scriptable one-shot subcommands alongside the interactive shell
+- [x] Automated test suite + CI
