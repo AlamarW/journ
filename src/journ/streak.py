@@ -27,3 +27,19 @@ def update_streak(
         return current_streak + 1, today
 
     return 1, today
+
+
+def recompute_streak(qualifying_dates: list[date]) -> tuple[int, int, date | None]:
+    """Recomputes (streak, longest_streak, last_entry_date) from scratch given the dates of
+    every entry that met its day's goal. update_streak's incremental day-over-day model can't
+    react to a backdated write filling a gap or a manual DB edit -- this is the reconciliation
+    path for those cases."""
+    if not qualifying_dates:
+        return 0, 0, None
+
+    ordered = sorted(set(qualifying_dates))
+    streak = longest = 1
+    for previous_day, current_day in zip(ordered, ordered[1:], strict=False):
+        streak = streak + 1 if current_day == previous_day + timedelta(days=1) else 1
+        longest = max(longest, streak)
+    return streak, longest, ordered[-1]

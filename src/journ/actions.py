@@ -16,7 +16,7 @@ from journ.builtin_editor import run_builtin_editor
 from journ.content import DecryptedEntry
 from journ.db import Database
 from journ.models import JournalEntry, Profile
-from journ.streak import update_streak
+from journ.streak import recompute_streak, update_streak
 from journ.words import count_words, format_elapsed, words_per_minute
 
 
@@ -143,6 +143,29 @@ def filter_private(entries: list[JournalEntry], include_private: bool) -> list[J
     return [e for e in entries if not e.private]
 
 
+def _update_streak_and_longest(
+    db: Database, profile: Profile, new_streak: int, new_last_entry_date: date | None
+) -> None:
+    db.update_streak(new_streak, new_last_entry_date)
+    if new_streak > profile.longest_streak:
+        db.update_longest_streak(new_streak)
+
+
+def reconcile_streak(db: Database) -> int:
+    """Recomputes and persists streak/longest_streak from every entry's accomplished_goal flag,
+    rather than update_streak's incremental day-over-day model. Call this after any write that
+    can target a past date, since a backdated entry filling a gap can't be reasoned about one
+    day at a time. Returns the new streak (0 if no profile exists yet)."""
+    profile = db.get_profile()
+    if profile is None:
+        return 0
+    qualifying_dates = [e.entry_date for e in db.all_entries() if e.accomplished_goal]
+    streak, longest, last_entry_date = recompute_streak(qualifying_dates)
+    db.update_streak(streak, last_entry_date)
+    db.update_longest_streak(longest)
+    return streak
+
+
 def write_today_entry(db: Database, private: bool | None = None) -> None:
     """private=None preserves today's existing entry's current private flag if editing one
     (False for a new entry) -- an explicit bool always overrides. For the built-in editor this
@@ -232,9 +255,7 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
         new_streak, new_last_entry_date = update_streak(
             profile.streak, profile.streak_last_entry_date, today, goal_met
         )
-        db.update_streak(new_streak, new_last_entry_date)
-        if new_streak > profile.longest_streak:
-            db.update_longest_streak(new_streak)
+        _update_streak_and_longest(db, profile, new_streak, new_last_entry_date)
 
         milestones = analytics.detect_milestones(
             words_before=words_before,
@@ -297,10 +318,11 @@ def save_conversation_entry(
     private=None preserves whatever the entry's current private flag is (False for a new
     entry) rather than defaulting to False -- an explicit bool always overrides.
 
-    Streak/longest-streak are only updated when entry_date is today: this is the only write
-    path that can target a past date, and streak.update_streak's day-over-day logic isn't
-    built for backdating, so a saved conversation about a past day never affects your streak.
-    Word/entry milestones (pure aggregate-total deltas) still fire regardless of date.
+    When entry_date is today, streak/longest-streak update incrementally via
+    streak.update_streak, same as write_today_entry. A backdated entry_date instead
+    reconciles the whole streak from scratch (streak.recompute_streak), since
+    update_streak's day-over-day model can't reason about a gap being filled after the
+    fact. Word/entry milestones (pure aggregate-total deltas) fire regardless of date.
 
     key must already be resolved by the caller -- this never calls unlock() itself, since an
     MCP tool call must never block on an interactive passphrase prompt.
@@ -354,16 +376,16 @@ def save_conversation_entry(
         )
         words_after, entries_after = db.aggregate_totals()
 
-        streak_after = profile.streak
-        streak_changed = False
         if entry_date == date.today():
             streak_after, new_last_entry_date = update_streak(
                 profile.streak, profile.streak_last_entry_date, entry_date, goal_met
             )
-            db.update_streak(streak_after, new_last_entry_date)
-            if streak_after > profile.longest_streak:
-                db.update_longest_streak(streak_after)
-            streak_changed = streak_after != profile.streak
+            _update_streak_and_longest(db, profile, streak_after, new_last_entry_date)
+        else:
+            # A backdated save can fill a gap or start/extend a streak that update_streak's
+            # today-only incremental model can't react to -- recompute from scratch instead.
+            streak_after = reconcile_streak(db)
+        streak_changed = streak_after != profile.streak
 
         milestones = analytics.detect_milestones(
             words_before=words_before,
