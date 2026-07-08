@@ -755,15 +755,21 @@ def set_private(db: Database, entry_date: date, private: bool) -> None:
     print(f"Entry for {entry_date.isoformat()} is now {state}.")
 
 
-def export_journal(db: Database, output_path: Path, export_format: str) -> None:
+def export_journal(
+    db: Database, output_path: Path, export_format: str, include_private: bool = False
+) -> None:
     if export_format not in ("md", "json"):
         print("Format must be 'md' or 'json'.")
         return
 
     profile, key = ensure_profile(db)
-    entries = db.all_entries()
-    if not entries:
+    all_entries = db.all_entries()
+    if not all_entries:
         print("You haven't written anything yet.")
+        return
+    entries = filter_private(all_entries, include_private)
+    if not entries:
+        print("All your entries are private -- pass --include-private to export them anyway.")
         return
 
     if profile.has_passphrase:
@@ -779,7 +785,7 @@ def export_journal(db: Database, output_path: Path, export_format: str) -> None:
             print("Export cancelled.")
             return
 
-    decrypted = all_decrypted(db, profile, key)
+    decrypted = all_decrypted(db, profile, key, entries=entries)
     if export_format == "md":
         text = content.format_markdown(decrypted)
     else:

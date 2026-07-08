@@ -149,6 +149,26 @@ def test_export_rejects_unknown_format(tmp_path, monkeypatch):
     assert not (tmp_path / "out.txt").exists()
 
 
+def test_export_include_private_flag(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write", "--private"], input="5\nn\n")
+
+    export_path = tmp_path / "export.json"
+    result = runner.invoke(cli.app, ["export", str(export_path), "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert "--include-private" in result.output
+    assert not export_path.exists()
+
+    result = runner.invoke(
+        cli.app, ["export", str(export_path), "--format", "json", "--include-private"]
+    )
+    assert result.exit_code == 0, result.output
+    assert export_path.exists()
+    assert "stub" in export_path.read_text()
+
+
 def test_write_private_flag_marks_new_entry_private(tmp_path, monkeypatch):
     global STUB_EDITOR
     STUB_EDITOR = _write_stub_editor(tmp_path)

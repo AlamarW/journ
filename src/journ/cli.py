@@ -184,10 +184,17 @@ def private(
 def export(
     output_path: Path,
     export_format: str = typer.Option("md", "--format", help="'md' or 'json'."),
+    include_private: bool = typer.Option(
+        False, "--include-private", help="Include entries flagged private in the export."
+    ),
 ) -> None:
     """Export all entries to a markdown or JSON file."""
     with _open_db() as db:
-        _run(lambda: actions.export_journal(db, output_path, export_format))
+        _run(
+            lambda: actions.export_journal(
+                db, output_path, export_format, include_private=include_private
+            )
+        )
 
 
 @editor_app.callback(invoke_without_command=True)

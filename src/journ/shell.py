@@ -144,14 +144,21 @@ class JournalingShell(cmd.Cmd):
         self._run(lambda: actions.show_on_this_day(self.db))
 
     def do_export(self, line):
-        "Export all entries: 'export path/to/file.md' or 'export path/to/file.json'"
+        "Export entries: 'export path/to/file.md [json] [include-private]'"
         parts = line.strip().split()
         if not parts:
-            print("Usage: export <path> [md|json]")
+            print("Usage: export <path> [md|json] [include-private]")
             return
         output_path = Path(parts[0])
-        export_format = parts[1] if len(parts) > 1 else "md"
-        self._run(lambda: actions.export_journal(self.db, output_path, export_format))
+        rest = parts[1:]
+        include_private = "include-private" in rest
+        formats = [p for p in rest if p != "include-private"]
+        export_format = formats[0] if formats else "md"
+        self._run(
+            lambda: actions.export_journal(
+                self.db, output_path, export_format, include_private=include_private
+            )
+        )
 
     def do_editor(self, line):
         "Show or change your editor: 'editor' or 'editor set' (includes journ's built-in one)"

@@ -304,6 +304,63 @@ def test_set_private_on_missing_entry_prints_message(db, capsys):
     assert "No entry found" in capsys.readouterr().out
 
 
+def test_export_journal_excludes_private_entries_by_default(db, tmp_path):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"public entry text", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=3,
+        )
+    )
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 2), content=b"a secret confession", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=3,
+            private=True,
+        )
+    )
+    output_path = tmp_path / "export.json"
+
+    actions.export_journal(db, output_path, "json")
+
+    exported = output_path.read_text()
+    assert "public entry text" in exported
+    assert "secret confession" not in exported
+
+
+def test_export_journal_include_private_includes_everything(db, tmp_path):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"a secret confession", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=3,
+            private=True,
+        )
+    )
+    output_path = tmp_path / "export.json"
+
+    actions.export_journal(db, output_path, "json", include_private=True)
+
+    assert "secret confession" in output_path.read_text()
+
+
+def test_export_journal_all_private_prints_message_without_writing(db, tmp_path, capsys):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"a secret confession", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=3,
+            private=True,
+        )
+    )
+    output_path = tmp_path / "export.json"
+
+    actions.export_journal(db, output_path, "json")
+
+    assert not output_path.exists()
+    assert "--include-private" in capsys.readouterr().out
+
+
 def test_save_conversation_entry_creates_new_entry_counts_only_user_words(db):
     db.create_profile(writing_goal=1)
     turns = [
