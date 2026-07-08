@@ -41,7 +41,20 @@ for next time.
 
 journ opens today's entry in whatever `$EDITOR` (or `$env:EDITOR` on PowerShell) is set to.
 If it's unset, journ falls back to `nano` on macOS/Linux, or (on Windows only) offers an
-interactive picker the first time and remembers your choice afterward — see above.
+interactive picker the first time and remembers your choice afterward — see above. Run
+`journ editor` any time to see what's currently configured, or `journ editor set` to
+(re)pick — this works on any platform, not just the automatic Windows prompt.
+
+### journ's built-in editor
+
+Tools like Notepad are fine text editors but have no idea you're journaling — no word count,
+no sense of your daily goal. `journ editor set` offers journ's own built-in editor as an
+option on every platform (Windows, WSL/Linux, and macOS): a minimal, distraction-free,
+full-screen text area with a live word count and goal indicator in the footer.
+<kbd>Ctrl+S</kbd> saves and exits, <kbd>Esc</kbd> discards and exits. It's also the only
+editor option where your entry never touches disk in plaintext — the external-editor path
+below still needs a real temp file for your editor to open, but the built-in editor holds
+your entry in memory and encrypts it directly.
 
 To set it yourself:
 
@@ -84,15 +97,16 @@ $ journ
 Each of those is also available as a scriptable one-shot command, so you don't have to open
 the shell just to check something:
 
-| Command                            | What it does                                          |
-| ----------------------------------- | ------------------------------------------------------ |
-| `journ` / `journ shell`             | Open the interactive `(journ)` shell                   |
-| `journ write`                       | Write today's entry in your editor                     |
-| `journ stats`                       | Average words-per-minute and total words written       |
-| `journ streak`                      | Current streak                                         |
-| `journ last`                        | Word count of your most recent entry                   |
-| `journ goal` / `journ goal 750`     | Show or set your daily writing goal                     |
-| `journ passphrase set/change/remove`| Manage the passphrase that encrypts your entries        |
+| Command                              | What it does                                            |
+| ------------------------------------- | -------------------------------------------------------- |
+| `journ` / `journ shell`               | Open the interactive `(journ)` shell                     |
+| `journ write`                         | Write today's entry in your editor                       |
+| `journ stats`                         | Average words-per-minute and total words written         |
+| `journ streak`                        | Current streak                                           |
+| `journ last`                          | Word count of your most recent entry                     |
+| `journ goal` / `journ goal 750`       | Show or set your daily writing goal                       |
+| `journ editor` / `journ editor set`   | Show or (re)pick your editor, including the built-in one  |
+| `journ passphrase set/change/remove`  | Manage the passphrase that encrypts your entries          |
 
 On first run, journ asks for your daily writing goal and whether you'd like to set a
 passphrase.
@@ -106,9 +120,10 @@ passphrase, it doesn't just gate access to the app: a key derived from it (PBKDF
 ciphertext. There's no recovery if you forget your passphrase, and metadata that isn't
 sensitive on its own (streak, writing goal, entry dates) is stored unencrypted.
 
-The one unavoidable exposure: while your editor has today's entry open, it's sitting in a
-plaintext temp file under `~/.journ/tmp`, deleted as soon as you close the editor — external
-editors need a real file on disk to edit.
+The one exposure, if you use an external editor: while it has today's entry open, it's
+sitting in a plaintext temp file under `~/.journ/tmp`, deleted as soon as you close the
+editor — external editors need a real file on disk to edit. journ's built-in editor
+(`journ editor set`) doesn't have this exposure at all; it holds the entry in memory only.
 
 ## Development
 

@@ -31,11 +31,24 @@ def test_posix_default_is_nano(monkeypatch, isolated_config):
     assert config.get_editor() == "nano"
 
 
-def test_windows_picker_selects_and_saves_notepad(monkeypatch, isolated_config):
+def test_windows_picker_offers_builtin_editor_first(monkeypatch, isolated_config):
     monkeypatch.delenv("EDITOR", raising=False)
     monkeypatch.setattr(config.os, "name", "nt")
     monkeypatch.setattr(config.shutil, "which", lambda exe: None)
     monkeypatch.setattr("sys.stdin", io.StringIO("1\n"))
+
+    chosen = config.get_editor()
+
+    assert chosen == config.BUILTIN_EDITOR
+    assert (isolated_config / "editor.cfg").read_text() == config.BUILTIN_EDITOR
+
+
+def test_windows_picker_selects_and_saves_notepad(monkeypatch, isolated_config):
+    monkeypatch.delenv("EDITOR", raising=False)
+    monkeypatch.setattr(config.os, "name", "nt")
+    monkeypatch.setattr(config.shutil, "which", lambda exe: None)
+    # 1 = built-in editor, 2 = notepad (the only detected external editor).
+    monkeypatch.setattr("sys.stdin", io.StringIO("2\n"))
 
     chosen = config.get_editor()
 
@@ -57,10 +70,19 @@ def test_windows_picker_custom_command(monkeypatch, isolated_config):
     monkeypatch.delenv("EDITOR", raising=False)
     monkeypatch.setattr(config.os, "name", "nt")
     monkeypatch.setattr(config.shutil, "which", lambda exe: None)
-    # Only notepad is "available" (always true), so option 2 is "custom command".
-    monkeypatch.setattr("sys.stdin", io.StringIO("2\ncode --wait\n"))
+    # 1 = built-in editor, 2 = notepad, so option 3 is "custom command".
+    monkeypatch.setattr("sys.stdin", io.StringIO("3\ncode --wait\n"))
 
     assert config.get_editor() == "code --wait"
+
+
+def test_prompt_editor_choice_works_on_posix(monkeypatch, isolated_config):
+    # journ editor set (unlike the automatic first-run trigger) works on any platform.
+    monkeypatch.setattr(config.os, "name", "posix")
+    monkeypatch.setattr(config.shutil, "which", lambda exe: None)
+    monkeypatch.setattr("sys.stdin", io.StringIO("1\n"))
+
+    assert config.prompt_editor_choice() == config.BUILTIN_EDITOR
 
 
 def test_editor_argv_posix_split(monkeypatch):

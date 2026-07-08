@@ -11,7 +11,10 @@ journal_filepath = journ_config_dir / "journal.db"
 journ_tmp_dir = journ_config_dir / "tmp"
 editor_config_filepath = journ_config_dir / "editor.cfg"
 
-WINDOWS_EDITOR_CHOICES = [
+BUILTIN_EDITOR = "__journ_builtin__"
+
+EDITOR_CHOICES = [
+    (BUILTIN_EDITOR, "journ's built-in editor (distraction-free, live word count)"),
     ("notepad", "Notepad (built into Windows)"),
     ("code --wait", "Visual Studio Code"),
     ("notepad++", "Notepad++"),
@@ -20,7 +23,7 @@ WINDOWS_EDITOR_CHOICES = [
 ]
 
 
-def _read_saved_editor() -> str | None:
+def read_saved_editor() -> str | None:
     if editor_config_filepath.is_file():
         saved_editor = editor_config_filepath.read_text(encoding="utf-8").strip()
         if saved_editor:
@@ -28,23 +31,27 @@ def _read_saved_editor() -> str | None:
     return None
 
 
-def _save_editor(editor_command: str) -> None:
+def save_editor_choice(editor_command: str) -> None:
     journ_config_dir.mkdir(parents=True, exist_ok=True)
     editor_config_filepath.write_text(editor_command, encoding="utf-8")
 
 
-def _prompt_windows_editor_choice() -> str:
-    print("No EDITOR environment variable is set.")
+def prompt_editor_choice() -> str:
+    """Interactively pick an editor. Used both by the automatic Windows first-run prompt
+    and by the explicit `journ editor set` command on any platform."""
     print("Pick a text editor for journ to use (this choice is saved for next time):\n")
 
     available_choices = []
-    for command, label in WINDOWS_EDITOR_CHOICES:
+    for command, label in EDITOR_CHOICES:
         executable = command.split(" ")[0]
-        if executable == "notepad" or shutil.which(executable):
+        is_builtin = executable == BUILTIN_EDITOR
+        is_notepad_on_windows = executable == "notepad" and os.name == "nt"
+        if is_builtin or is_notepad_on_windows or shutil.which(executable):
             available_choices.append((command, label))
 
     for index, (command, label) in enumerate(available_choices, start=1):
-        print(f"  {index}. {label}  ({command})")
+        suffix = "" if command == BUILTIN_EDITOR else f"  ({command})"
+        print(f"  {index}. {label}{suffix}")
     custom_choice_number = len(available_choices) + 1
     print(f"  {custom_choice_number}. Enter a custom command")
 
@@ -72,22 +79,25 @@ def get_editor() -> str:
     if editor:
         return editor
 
-    saved_editor = _read_saved_editor()
+    saved_editor = read_saved_editor()
     if saved_editor:
         return saved_editor
 
     if os.name == "nt":
-        chosen_editor = _prompt_windows_editor_choice()
-        _save_editor(chosen_editor)
+        print("No EDITOR environment variable is set.")
+        chosen_editor = prompt_editor_choice()
+        save_editor_choice(chosen_editor)
+        label = "journ's built-in editor" if chosen_editor == BUILTIN_EDITOR else chosen_editor
         print(
-            f"Using '{chosen_editor}' as your editor going forward. "
-            f"Change it anytime by setting $env:EDITOR, or by deleting {editor_config_filepath}\n"
+            f"Using {label} going forward. Change it anytime with `journ editor set`, by "
+            f"setting $env:EDITOR, or by deleting {editor_config_filepath}\n"
         )
         return chosen_editor
 
     print(
-        "No EDITOR environment variable set, defaulting to 'nano'. "
-        "Set EDITOR to use a different editor (e.g. export EDITOR=vim)."
+        "No EDITOR environment variable set, defaulting to 'nano'. Set EDITOR to use a "
+        "different editor, or run `journ editor set` to pick one (including journ's "
+        "built-in editor)."
     )
     return "nano"
 

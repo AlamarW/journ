@@ -9,7 +9,7 @@ from typing import Optional
 
 import typer
 
-from journ import actions, config
+from journ import actions, config, ui
 from journ.actions import PassphraseError
 from journ.db import Database
 from journ.shell import JournalingShell
@@ -22,6 +22,9 @@ app = typer.Typer(
 
 passphrase_app = typer.Typer(help="Manage the passphrase that encrypts your entries.")
 app.add_typer(passphrase_app, name="passphrase")
+
+editor_app = typer.Typer(help="Show or change the editor journ uses.")
+app.add_typer(editor_app, name="editor")
 
 
 def _open_db() -> Database:
@@ -41,6 +44,7 @@ def _open_shell() -> None:
         clear_screen()
         actions.ensure_profile(db)
         clear_screen()
+        ui.print_welcome()
         JournalingShell(db).cmdloop()
 
 
@@ -89,6 +93,19 @@ def goal(new_goal: Optional[int] = typer.Argument(None)) -> None:
     """Show or set your daily writing goal."""
     with _open_db() as db:
         _run(lambda: actions.set_goal(db, new_goal))
+
+
+@editor_app.callback(invoke_without_command=True)
+def editor_main(ctx: typer.Context) -> None:
+    """Show the currently configured editor."""
+    if ctx.invoked_subcommand is None:
+        actions.manage_editor(reconfigure=False)
+
+
+@editor_app.command("set")
+def editor_set() -> None:
+    """Interactively choose an editor, including journ's built-in one."""
+    actions.manage_editor(reconfigure=True)
 
 
 @passphrase_app.command("set")

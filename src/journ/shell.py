@@ -15,7 +15,9 @@ from journ.terminal import clear_screen
 
 
 class JournalingShell(cmd.Cmd):
-    intro = "Welcome to Journ, type help or ? to list commands\nType 'write' to start\n"
+    # Empty: the welcome banner is printed via ui.print_welcome() before cmdloop() starts
+    # (see cli.py:_open_shell), so it renders identically for `journ` and `journ shell`.
+    intro = ""
     prompt = "(journ) "
 
     def __init__(self, db: Database):
@@ -56,6 +58,14 @@ class JournalingShell(cmd.Cmd):
                 print("Goal must be a whole number.")
                 return
         self._run(lambda: actions.set_goal(self.db, new_goal))
+
+    def do_editor(self, line):
+        "Show or change your editor: 'editor' or 'editor set' (includes journ's built-in one)"
+        arg = line.strip().lower()
+        if arg not in ("", "set"):
+            print("Usage: editor  |  editor set")
+            return
+        self._run(lambda: actions.manage_editor(reconfigure=(arg == "set")))
 
     def do_passphrase(self, line):
         "Manage your passphrase: 'passphrase set|change|remove'"

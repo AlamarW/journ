@@ -10,11 +10,12 @@ import subprocess
 from dataclasses import replace
 from datetime import date, datetime
 
-from journ import config, crypto
+from journ import config, crypto, ui
+from journ.builtin_editor import run_builtin_editor
 from journ.db import Database
 from journ.models import JournalEntry, Profile
 from journ.streak import update_streak
-from journ.words import count_words, format_elapsed, words_per_minute
+from journ.words import count_words, words_per_minute
 
 
 class PassphraseError(Exception):
@@ -111,46 +112,44 @@ def write_today_entry(db: Database) -> None:
     existing_text = _decode_entry(existing, key) if existing else ""
 
     editor = config.get_editor()
-    config.journ_tmp_dir.mkdir(parents=True, exist_ok=True)
-    scratch_path = config.journ_tmp_dir / f"{today.isoformat()}.txt"
-
-    for leftover in config.journ_tmp_dir.glob("*.txt"):
-        if leftover != scratch_path:
-            leftover.unlink()
-
-    scratch_path.write_text(existing_text, encoding="utf-8")
+    used_builtin = editor == config.BUILTIN_EDITOR
 
     start_time = datetime.now()
-    try:
-        subprocess.run(
-            config.editor_argv(editor) + [str(scratch_path)],
-            shell=(os.name == "nt"),
-        )
-    except FileNotFoundError:
-        scratch_path.unlink(missing_ok=True)
-        print(f"Could not launch editor '{editor}'. Set EDITOR to a valid command and try again.")
-        return
-    elapsed = datetime.now() - start_time
+    if used_builtin:
+        # Held in memory only -- unlike the external-editor path below, this never writes
+        # plaintext to disk.
+        text = run_builtin_editor(existing_text, profile.writing_goal)
+        if text is None:
+            print("Discarded -- no changes saved.")
+            return
+    else:
+        config.journ_tmp_dir.mkdir(parents=True, exist_ok=True)
+        scratch_path = config.journ_tmp_dir / f"{today.isoformat()}.txt"
 
-    text = scratch_path.read_text(encoding="utf-8")
-    scratch_path.unlink(missing_ok=True)
+        for leftover in config.journ_tmp_dir.glob("*.txt"):
+            if leftover != scratch_path:
+                leftover.unlink()
+
+        scratch_path.write_text(existing_text, encoding="utf-8")
+        try:
+            subprocess.run(
+                config.editor_argv(editor) + [str(scratch_path)],
+                shell=(os.name == "nt"),
+            )
+        except FileNotFoundError:
+            scratch_path.unlink(missing_ok=True)
+            print(
+                f"Could not launch editor '{editor}'. Set EDITOR to a valid command and "
+                "try again."
+            )
+            return
+        text = scratch_path.read_text(encoding="utf-8")
+        scratch_path.unlink(missing_ok=True)
+    elapsed = datetime.now() - start_time
 
     word_count = count_words(text)
     goal_met = word_count >= profile.writing_goal
     wpm = words_per_minute(word_count, elapsed)
-
-    if goal_met:
-        print(
-            f"You've typed {word_count} words. This is over your goal of "
-            f"{profile.writing_goal} words!"
-        )
-    else:
-        print(
-            f"You've typed {word_count} words. This is under your goal of "
-            f"{profile.writing_goal} words"
-        )
-    print(f"You've journalled for {format_elapsed(elapsed)}")
-    print(f"That's {wpm} words per minute")
 
     content, is_encrypted = _encode_entry(text, key)
     db.upsert_entry(
@@ -168,15 +167,22 @@ def write_today_entry(db: Database) -> None:
         profile.streak, profile.streak_last_entry_date, today, goal_met
     )
     db.update_streak(new_streak, new_last_entry_date)
-    if new_streak != profile.streak:
-        print(f"Your streak is now {new_streak} day(s)!")
-    else:
-        print(f"Your current streak is {profile.streak} day(s).")
+
+    ui.print_write_summary(
+        word_count=word_count,
+        writing_goal=profile.writing_goal,
+        goal_met=goal_met,
+        elapsed=elapsed,
+        words_per_minute=wpm,
+        streak=new_streak,
+        streak_changed=(new_streak != profile.streak),
+        skip_goal_line=used_builtin,
+    )
 
 
 def show_streak(db: Database) -> None:
     profile, _key = ensure_profile(db)
-    print(f"Your streak is currently {profile.streak} day(s).")
+    ui.print_streak_line(profile.streak)
 
 
 def show_last_entry(db: Database) -> None:
@@ -211,8 +217,7 @@ def show_stats(db: Database) -> None:
             wpm_values.append(entry.words_per_minute)
 
     avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
-    print(f"Your average words per minute is {avg_wpm}")
-    print(f"You've written a total of {total_words} words across {len(entries)} entries!")
+    ui.print_stats_table(avg_wpm=avg_wpm, total_words=total_words, entry_count=len(entries))
 
 
 def set_goal(db: Database, new_goal: int | None) -> None:
@@ -222,6 +227,34 @@ def set_goal(db: Database, new_goal: int | None) -> None:
         return
     db.update_goal(new_goal)
     print(f"Daily writing goal updated to {new_goal} words.")
+
+
+def manage_editor(reconfigure: bool) -> None:
+    """Show or change the configured editor. Unlike the other actions this doesn't touch
+    the database -- editor choice is machine-level config, not profile data."""
+    if reconfigure:
+        chosen = config.prompt_editor_choice()
+        config.save_editor_choice(chosen)
+        label = "journ's built-in editor" if chosen == config.BUILTIN_EDITOR else chosen
+        print(f"Using {label} going forward.")
+        return
+
+    editor = os.getenv("EDITOR")
+    if editor:
+        print(f"Currently using: {editor} (from $EDITOR)")
+        return
+
+    saved = config.read_saved_editor()
+    if saved:
+        label = "journ's built-in editor" if saved == config.BUILTIN_EDITOR else saved
+        print(f"Currently using: {label} (saved choice)")
+        return
+
+    if os.name == "nt":
+        print("Not configured yet -- you'll be prompted to pick one the next time you write.")
+    else:
+        print("Currently using: nano (default -- no EDITOR set or saved choice)")
+    print("Run `journ editor set` to choose (including journ's built-in editor).")
 
 
 def manage_passphrase(db: Database, action: str) -> None:

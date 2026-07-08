@@ -37,11 +37,11 @@ def test_write_then_stats_and_streak(tmp_path, monkeypatch):
 
     result = runner.invoke(cli.app, ["stats"])
     assert result.exit_code == 0, result.output
-    assert "total of" in result.output
+    assert "Total words written" in result.output
 
     result = runner.invoke(cli.app, ["streak"])
     assert result.exit_code == 0, result.output
-    assert "streak is currently 1" in result.output
+    assert "Streak: 1 day" in result.output
 
 
 def test_goal_show_and_set(tmp_path, monkeypatch):
@@ -56,3 +56,35 @@ def test_goal_show_and_set(tmp_path, monkeypatch):
     result = runner.invoke(cli.app, ["goal", "1000"])
     assert result.exit_code == 0, result.output
     assert "1000" in result.output
+
+
+def test_stats_output_has_no_raw_ansi_codes_when_piped(tmp_path, monkeypatch):
+    # CliRunner captures output as a non-TTY stream; rich.Console must auto-detect that and
+    # skip styling, so scripted/piped use of one-shot commands stays clean, parseable text.
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+
+    runner.invoke(cli.app, ["write"], input="5\nn\n")
+    result = runner.invoke(cli.app, ["stats"])
+
+    assert "\x1b[" not in result.output
+
+
+def test_editor_show_then_set_builtin(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "journ_config_dir", tmp_path / ".journ")
+    monkeypatch.setattr(config, "editor_config_filepath", tmp_path / ".journ" / "editor.cfg")
+    monkeypatch.delenv("EDITOR", raising=False)
+
+    result = runner.invoke(cli.app, ["editor"])
+    assert result.exit_code == 0, result.output
+    assert "nano" in result.output
+
+    result = runner.invoke(cli.app, ["editor", "set"], input="1\n")
+    assert result.exit_code == 0, result.output
+    assert "built-in editor" in result.output
+    assert (tmp_path / ".journ" / "editor.cfg").read_text() == config.BUILTIN_EDITOR
+
+    result = runner.invoke(cli.app, ["editor"])
+    assert result.exit_code == 0, result.output
+    assert "built-in editor" in result.output
