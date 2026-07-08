@@ -72,24 +72,3 @@ uv sync
 uv run pytest
 uv run ruff check .
 ```
-
-## v2 note
-
-Versions before 2.0 used a multi-user login system where a password only gated the app's
-login screen, not the stored entries themselves — anyone with file access to `journal.db`
-could read entries in plaintext regardless. v2 drops multi-user support (this is a
-single-machine tool; there's no real case for multiple accounts) in favor of one local
-profile with an optional passphrase that genuinely encrypts your entries. This is a breaking
-schema change: old `journal.db` files from v1 aren't migrated, though nothing is deleted —
-old data just sits unused in old tables in the same file.
-
-### To Do List
-
-- [x] Fully implement daily tmp file for editing
-- [x] Journaling streak
-- [x] Implement default to user defined text editor
-- [x] Add current journ data (word count mostly)
-- [x] Windows/PowerShell-native support (not just WSL)
-- [x] Passphrase-based entry encryption
-- [x] Scriptable one-shot subcommands alongside the interactive shell
-- [x] Automated test suite + CI
