@@ -9,10 +9,25 @@ import cmd
 from pathlib import Path
 from typing import Callable
 
-from journ import actions
+from journ import actions, ui
 from journ.actions import PassphraseError
 from journ.db import Database
 from journ.terminal import clear_screen
+
+# Grouped for the custom `help` overview -- deliberately excludes the do_journ/do_EOF
+# aliases, which exist for backward compatibility and Ctrl+D but would just be noise here.
+_HELP_GROUPS = [
+    ("Write", ["write", "stats", "streak", "last", "goal"]),
+    (
+        "Analytics",
+        [
+            "calendar", "trends", "records", "patterns", "suggest", "frequency",
+            "search", "on_this_day", "export",
+        ],
+    ),
+    ("Configuration", ["editor", "passphrase"]),
+    ("Shell", ["clear", "help", "exit"]),
+]
 
 
 class JournalingShell(cmd.Cmd):
@@ -132,6 +147,17 @@ class JournalingShell(cmd.Cmd):
     def do_clear(self, line):
         "Clear the screen"
         clear_screen()
+
+    def do_help(self, arg):
+        "List all commands, or 'help <command>' for detail on a specific one"
+        if arg:
+            super().do_help(arg)
+            return
+        groups = [
+            (section, [(name, getattr(self, f"do_{name}").__doc__ or "") for name in names])
+            for section, names in _HELP_GROUPS
+        ]
+        ui.print_repl_help(groups)
 
     def do_exit(self, line):
         "Exit journ"

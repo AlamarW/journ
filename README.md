@@ -94,6 +94,10 @@ $ journ
 (journ) exit
 ```
 
+Type `help` inside the shell any time for a grouped overview of every command, or
+`help <command>` for detail on one. `journ --help` shows the same set of commands from
+outside the shell.
+
 Each of those is also available as a scriptable one-shot command, so you don't have to open
 the shell just to check something:
 

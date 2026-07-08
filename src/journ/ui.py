@@ -243,3 +243,19 @@ def print_goal_suggestion(*, current_goal: int, suggested: int | None) -> None:
         f"{current_goal} to [bold]{suggested}[/bold] words. Run `journ goal {suggested}` "
         "to apply it."
     )
+
+
+def print_repl_help(groups: list[tuple[str, list[tuple[str, str]]]]) -> None:
+    table = Table(title="journ commands", title_justify="left")
+    table.add_column("Command", style="bold cyan", no_wrap=True)
+    table.add_column("Description")
+
+    for index, (section, commands) in enumerate(groups):
+        table.add_row(f"[bold]{section}[/bold]", "")
+        for name, description in commands:
+            table.add_row(f"  {name}", description)
+        if index < len(groups) - 1:
+            table.add_section()
+
+    console.print(table)
+    console.print("\nType [bold]help <command>[/bold] for more detail on a specific command.")
