@@ -91,3 +91,58 @@ def test_editor_show_then_set_builtin(tmp_path, monkeypatch):
     result = runner.invoke(cli.app, ["editor"])
     assert result.exit_code == 0, result.output
     assert "built-in editor" in result.output
+
+
+def test_metadata_analytics_commands_smoke(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+
+    result = runner.invoke(cli.app, ["write"], input="5\nn\n")
+    assert result.exit_code == 0, result.output
+
+    for command in (["calendar"], ["trends"], ["trends", "--days", "7"], ["records"],
+                     ["patterns"], ["suggest"]):
+        result = runner.invoke(cli.app, command)
+        assert result.exit_code == 0, (command, result.output)
+
+
+def test_content_commands_smoke_on_unencrypted_journal(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+
+    runner.invoke(cli.app, ["write"], input="5\nn\n")
+
+    result = runner.invoke(cli.app, ["frequency"])
+    assert result.exit_code == 0, result.output
+    assert "stub" in result.output  # from the stub editor's fixed text
+
+    result = runner.invoke(cli.app, ["search", "stub"])
+    assert result.exit_code == 0, result.output
+    assert "matched" in result.output
+
+    result = runner.invoke(cli.app, ["search", "nonexistent-phrase-xyz"])
+    assert result.exit_code == 0, result.output
+    assert "No entries matched" in result.output
+
+    result = runner.invoke(cli.app, ["on-this-day"])
+    assert result.exit_code == 0, result.output
+
+    export_path = tmp_path / "export.json"
+    result = runner.invoke(cli.app, ["export", str(export_path), "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert export_path.exists()
+    assert "stub" in export_path.read_text()
+
+
+def test_export_rejects_unknown_format(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write"], input="5\nn\n")
+
+    result = runner.invoke(cli.app, ["export", str(tmp_path / "out.txt"), "--format", "xml"])
+    assert result.exit_code == 0, result.output
+    assert "must be" in result.output.lower()
+    assert not (tmp_path / "out.txt").exists()

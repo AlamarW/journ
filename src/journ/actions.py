@@ -9,9 +9,11 @@ import os
 import subprocess
 from dataclasses import replace
 from datetime import date, datetime
+from pathlib import Path
 
-from journ import config, crypto, ui
+from journ import analytics, config, content, crypto, ui
 from journ.builtin_editor import run_builtin_editor
+from journ.content import DecryptedEntry
 from journ.db import Database
 from journ.models import JournalEntry, Profile
 from journ.streak import update_streak
@@ -88,18 +90,44 @@ def unlock(profile: Profile, attempts: int = 3) -> bytes | None:
     raise PassphraseError("Too many incorrect passphrase attempts.")
 
 
-def _decode_entry(entry: JournalEntry, key: bytes | None) -> str:
+def _decode_entry(db: Database, entry: JournalEntry, key: bytes | None) -> str:
     if entry.is_encrypted:
         if key is None:
             raise PassphraseError("This entry is encrypted but no passphrase was provided.")
-        return crypto.decrypt_text(key, entry.content)
-    return entry.content.decode("utf-8")
+        text = crypto.decrypt_text(key, entry.content)
+    else:
+        text = entry.content.decode("utf-8")
+
+    if entry.word_count is None:
+        # Lazily backfill entries written before word_count was tracked (see db._migrate).
+        entry.word_count = count_words(text)
+        db.update_word_count(entry.entry_date, entry.word_count)
+
+    return text
 
 
 def _encode_entry(text: str, key: bytes | None) -> tuple[bytes, bool]:
     if key is not None:
         return crypto.encrypt_text(key, text), True
     return text.encode("utf-8"), False
+
+
+def _all_decrypted(db: Database, profile: Profile, key: bytes | None) -> list[DecryptedEntry]:
+    entries = db.all_entries()
+    if not entries:
+        return []
+    if key is None:
+        key = unlock(profile)
+    return [
+        DecryptedEntry(
+            entry_date=entry.entry_date,
+            text=(text := _decode_entry(db, entry, key)),
+            word_count=entry.word_count if entry.word_count is not None else count_words(text),
+            words_per_minute=entry.words_per_minute,
+            accomplished_goal=entry.accomplished_goal,
+        )
+        for entry in entries
+    ]
 
 
 def write_today_entry(db: Database) -> None:
@@ -109,7 +137,7 @@ def write_today_entry(db: Database) -> None:
 
     today = date.today()
     existing = db.get_entry(today)
-    existing_text = _decode_entry(existing, key) if existing else ""
+    existing_text = _decode_entry(db, existing, key) if existing else ""
 
     editor = config.get_editor()
     used_builtin = editor == config.BUILTIN_EDITOR
@@ -151,22 +179,39 @@ def write_today_entry(db: Database) -> None:
     goal_met = word_count >= profile.writing_goal
     wpm = words_per_minute(word_count, elapsed)
 
-    content, is_encrypted = _encode_entry(text, key)
+    words_before, entries_before = db.aggregate_totals()
+
+    content_bytes, is_encrypted = _encode_entry(text, key)
     db.upsert_entry(
         JournalEntry(
             entry_date=today,
-            content=content,
+            content=content_bytes,
             is_encrypted=is_encrypted,
             words_per_minute=wpm,
             accomplished_goal=goal_met,
             updated_at=datetime.now().isoformat(),
+            word_count=word_count,
+            started_at=start_time.isoformat(),
         )
     )
+
+    words_after, entries_after = db.aggregate_totals()
 
     new_streak, new_last_entry_date = update_streak(
         profile.streak, profile.streak_last_entry_date, today, goal_met
     )
     db.update_streak(new_streak, new_last_entry_date)
+    if new_streak > profile.longest_streak:
+        db.update_longest_streak(new_streak)
+
+    milestones = analytics.detect_milestones(
+        words_before=words_before,
+        words_after=words_after,
+        entries_before=entries_before,
+        entries_after=entries_after,
+        streak_before=profile.streak,
+        streak_after=new_streak,
+    )
 
     ui.print_write_summary(
         word_count=word_count,
@@ -177,6 +222,7 @@ def write_today_entry(db: Database) -> None:
         streak=new_streak,
         streak_changed=(new_streak != profile.streak),
         skip_goal_line=used_builtin,
+        milestones=milestones,
     )
 
 
@@ -191,12 +237,13 @@ def show_last_entry(db: Database) -> None:
     if entry is None:
         print("You haven't written anything yet.")
         return
-    if key is None:
-        key = unlock(profile)
-    word_count = count_words(_decode_entry(entry, key))
+    if entry.word_count is None:
+        if key is None:
+            key = unlock(profile)
+        _decode_entry(db, entry, key)
     print(
-        f"Your most recent entry ({entry.entry_date.isoformat()}) is {word_count} words; "
-        f"your goal is {profile.writing_goal} words."
+        f"Your most recent entry ({entry.entry_date.isoformat()}) is {entry.word_count} "
+        f"words; your goal is {profile.writing_goal} words."
     )
 
 
@@ -207,17 +254,17 @@ def show_stats(db: Database) -> None:
         print("You haven't written anything yet.")
         return
 
-    if key is None:
-        key = unlock(profile)
-    total_words = 0
-    wpm_values = []
-    for entry in entries:
-        total_words += count_words(_decode_entry(entry, key))
-        if entry.words_per_minute:
-            wpm_values.append(entry.words_per_minute)
+    unbackfilled = [e for e in entries if e.word_count is None]
+    if unbackfilled:
+        if key is None:
+            key = unlock(profile)
+        for entry in unbackfilled:
+            _decode_entry(db, entry, key)
 
+    total_words, entry_count = db.aggregate_totals()
+    wpm_values = [e.words_per_minute for e in entries if e.words_per_minute]
     avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
-    ui.print_stats_table(avg_wpm=avg_wpm, total_words=total_words, entry_count=len(entries))
+    ui.print_stats_table(avg_wpm=avg_wpm, total_words=total_words, entry_count=entry_count)
 
 
 def set_goal(db: Database, new_goal: int | None) -> None:
@@ -298,7 +345,127 @@ def _reencrypt_all(
     new_key: bytes | None,
 ) -> None:
     for entry in db.all_entries():
-        text = _decode_entry(entry, old_key)
-        content, is_encrypted = _encode_entry(text, new_key)
-        db.upsert_entry(replace(entry, content=content, is_encrypted=is_encrypted))
+        text = _decode_entry(db, entry, old_key)
+        content_bytes, is_encrypted = _encode_entry(text, new_key)
+        db.upsert_entry(replace(entry, content=content_bytes, is_encrypted=is_encrypted))
     db.set_passphrase(new_salt, new_canary)
+
+
+# --- metadata-only analytics (no passphrase needed once word_count/started_at are backfilled) ---
+
+
+def show_calendar(db: Database) -> None:
+    _profile, _key = ensure_profile(db)
+    entries = db.all_entries()
+    grid = analytics.build_calendar(entries)
+    score = analytics.consistency_score(entries)
+    ui.print_calendar(grid, consistency=score)
+
+
+def show_trends(db: Database, days: int) -> None:
+    _profile, _key = ensure_profile(db)
+    entries = db.all_entries()
+    points = analytics.trend_series(entries, days=days)
+    ui.print_trends(points)
+
+
+def show_records(db: Database) -> None:
+    profile, _key = ensure_profile(db)
+    entries = db.all_entries()
+    records = analytics.personal_records(entries, profile)
+    ui.print_records(records)
+
+
+def show_patterns(db: Database) -> None:
+    _profile, _key = ensure_profile(db)
+    entries = db.all_entries()
+    pattern = analytics.writing_pattern(entries)
+    ui.print_patterns(pattern)
+
+
+def suggest_goal_action(db: Database) -> None:
+    profile, _key = ensure_profile(db)
+    entries = db.all_entries()
+    suggestion = analytics.suggest_goal(entries, profile.writing_goal)
+    ui.print_goal_suggestion(current_goal=profile.writing_goal, suggested=suggestion)
+
+
+# --- content-based features (need to decrypt entry text) ---
+
+
+def show_word_frequency(db: Database) -> None:
+    profile, key = ensure_profile(db)
+    decrypted = _all_decrypted(db, profile, key)
+    if not decrypted:
+        print("You haven't written anything yet.")
+        return
+    freq = content.word_frequency([e.text for e in decrypted])
+    ui.print_word_frequency(freq)
+
+
+def search_journal(db: Database, query: str) -> None:
+    profile, key = ensure_profile(db)
+    decrypted = _all_decrypted(db, profile, key)
+    results = content.search_matches(decrypted, query)
+    ui.print_search_results(query, results)
+
+
+def show_on_this_day(db: Database) -> None:
+    profile, key = ensure_profile(db)
+    today = date.today()
+    matches = [
+        e
+        for e in db.all_entries()
+        if e.entry_date.month == today.month
+        and e.entry_date.day == today.day
+        and e.entry_date.year != today.year
+    ]
+    if not matches:
+        print("No entries from this day in previous years yet.")
+        return
+    if key is None:
+        key = unlock(profile)
+    decrypted = [
+        DecryptedEntry(
+            entry_date=entry.entry_date,
+            text=(text := _decode_entry(db, entry, key)),
+            word_count=entry.word_count if entry.word_count is not None else count_words(text),
+            words_per_minute=entry.words_per_minute,
+            accomplished_goal=entry.accomplished_goal,
+        )
+        for entry in matches
+    ]
+    ui.print_on_this_day(decrypted)
+
+
+def export_journal(db: Database, output_path: Path, export_format: str) -> None:
+    if export_format not in ("md", "json"):
+        print("Format must be 'md' or 'json'.")
+        return
+
+    profile, key = ensure_profile(db)
+    entries = db.all_entries()
+    if not entries:
+        print("You haven't written anything yet.")
+        return
+
+    if profile.has_passphrase:
+        confirm = (
+            input(
+                "This journal is encrypted, but the exported file will be plaintext on "
+                "disk. Continue? (y/N) -> "
+            )
+            .strip()
+            .lower()
+        )
+        if confirm != "y":
+            print("Export cancelled.")
+            return
+
+    decrypted = _all_decrypted(db, profile, key)
+    if export_format == "md":
+        text = content.format_markdown(decrypted)
+    else:
+        text = content.format_json(decrypted)
+    output_path.write_text(text, encoding="utf-8")
+    print(f"Exported {len(decrypted)} entries to {output_path}")

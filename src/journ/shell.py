@@ -6,12 +6,28 @@ single implementation shared with the one-shot CLI subcommands in cli.py.
 from __future__ import annotations
 
 import cmd
+from pathlib import Path
 from typing import Callable
 
-from journ import actions
+from journ import actions, ui
 from journ.actions import PassphraseError
 from journ.db import Database
 from journ.terminal import clear_screen
+
+# Grouped for the custom `help` overview -- deliberately excludes the do_journ/do_EOF
+# aliases, which exist for backward compatibility and Ctrl+D but would just be noise here.
+_HELP_GROUPS = [
+    ("Write", ["write", "stats", "streak", "last", "goal"]),
+    (
+        "Analytics",
+        [
+            "calendar", "trends", "records", "patterns", "suggest", "frequency",
+            "search", "on_this_day", "export",
+        ],
+    ),
+    ("Configuration", ["editor", "passphrase"]),
+    ("Shell", ["clear", "help", "exit"]),
+]
 
 
 class JournalingShell(cmd.Cmd):
@@ -59,6 +75,59 @@ class JournalingShell(cmd.Cmd):
                 return
         self._run(lambda: actions.set_goal(self.db, new_goal))
 
+    def do_calendar(self, line):
+        "Show a heatmap of which days you've written, and your 30-day consistency"
+        self._run(lambda: actions.show_calendar(self.db))
+
+    def do_trends(self, line):
+        "Show word count / goal-completion trends: 'trends' or 'trends 60' (days back)"
+        days = 30
+        if line.strip():
+            try:
+                days = int(line.strip())
+            except ValueError:
+                print("Days must be a whole number.")
+                return
+        self._run(lambda: actions.show_trends(self.db, days))
+
+    def do_records(self, line):
+        "Show personal records: longest entry, best words-per-minute, longest streak ever"
+        self._run(lambda: actions.show_records(self.db))
+
+    def do_patterns(self, line):
+        "Show when you tend to write: by day of week and time of day"
+        self._run(lambda: actions.show_patterns(self.db))
+
+    def do_suggest(self, line):
+        "Suggest a daily writing goal based on your recent entries"
+        self._run(lambda: actions.suggest_goal_action(self.db))
+
+    def do_frequency(self, line):
+        "Show your most-used words across all entries"
+        self._run(lambda: actions.show_word_frequency(self.db))
+
+    def do_search(self, line):
+        "Search your entries for a word or phrase: 'search some phrase'"
+        query = line.strip()
+        if not query:
+            print("Usage: search <word or phrase>")
+            return
+        self._run(lambda: actions.search_journal(self.db, query))
+
+    def do_on_this_day(self, line):
+        "Show entries written on this date in previous years"
+        self._run(lambda: actions.show_on_this_day(self.db))
+
+    def do_export(self, line):
+        "Export all entries: 'export path/to/file.md' or 'export path/to/file.json'"
+        parts = line.strip().split()
+        if not parts:
+            print("Usage: export <path> [md|json]")
+            return
+        output_path = Path(parts[0])
+        export_format = parts[1] if len(parts) > 1 else "md"
+        self._run(lambda: actions.export_journal(self.db, output_path, export_format))
+
     def do_editor(self, line):
         "Show or change your editor: 'editor' or 'editor set' (includes journ's built-in one)"
         arg = line.strip().lower()
@@ -78,6 +147,17 @@ class JournalingShell(cmd.Cmd):
     def do_clear(self, line):
         "Clear the screen"
         clear_screen()
+
+    def do_help(self, arg):
+        "List all commands, or 'help <command>' for detail on a specific one"
+        if arg:
+            super().do_help(arg)
+            return
+        groups = [
+            (section, [(name, getattr(self, f"do_{name}").__doc__ or "") for name in names])
+            for section, names in _HELP_GROUPS
+        ]
+        ui.print_repl_help(groups)
 
     def do_exit(self, line):
         "Exit journ"
