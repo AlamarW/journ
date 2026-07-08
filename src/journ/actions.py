@@ -157,6 +157,8 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
     today = date.today()
     existing = db.get_entry(today)
     existing_text = _decode_entry(db, existing, key) if existing else ""
+    previous_word_count = count_words(existing_text)
+    initial_started_at = existing.started_at if existing and existing.started_at else None
     initial_private = existing.private if existing else False
     if private is not None:
         initial_private = private
@@ -202,7 +204,8 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
 
     word_count = count_words(text)
     goal_met = word_count >= profile.writing_goal
-    wpm = words_per_minute(word_count, elapsed)
+    new_words_this_session = max(0, word_count - previous_word_count)
+    wpm = words_per_minute(new_words_this_session, elapsed)
 
     # The editor session above can run for an arbitrarily long time, so only the final
     # read-totals -> write -> streak-update sequence is wrapped atomically -- holding the
@@ -221,7 +224,7 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
                 accomplished_goal=goal_met,
                 updated_at=datetime.now().isoformat(),
                 word_count=word_count,
-                started_at=start_time.isoformat(),
+                started_at=initial_started_at or start_time.isoformat(),
                 private=is_private,
             )
         )

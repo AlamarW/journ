@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from journ import actions, config, crypto
 from journ.builtin_editor import EditorResult
@@ -65,6 +65,100 @@ def test_write_persists_word_count_and_started_at(db, monkeypatch):
     entry = db.latest_entry()
     assert entry.word_count == 4
     assert entry.started_at is not None
+
+
+def test_write_today_entry_resume_preserves_started_at(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text="one two three four", private=priv),
+    )
+    actions.write_today_entry(db)
+    first_started_at = db.latest_entry().started_at
+
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text=text + " five six", private=priv),
+    )
+    actions.write_today_entry(db)
+
+    assert db.latest_entry().started_at == first_started_at
+
+
+def test_write_today_entry_resume_computes_session_only_wpm_not_cumulative(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+
+    class _StepDateTime:
+        def __init__(self, values):
+            self._values = iter(values)
+
+        def now(self, tz=None):
+            return next(self._values)
+
+    monkeypatch.setattr(
+        actions,
+        "datetime",
+        _StepDateTime(
+            [
+                datetime(2026, 1, 1, 12, 0, 0),  # session 1: start_time
+                datetime(2026, 1, 1, 12, 1, 0),  # session 1: elapsed (1 minute)
+                datetime(2026, 1, 1, 12, 1, 0),  # session 1: updated_at
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text="one two three four", private=priv),
+    )
+    actions.write_today_entry(db)
+
+    monkeypatch.setattr(
+        actions,
+        "datetime",
+        _StepDateTime(
+            [
+                datetime(2026, 1, 1, 12, 5, 0),  # session 2: start_time
+                datetime(2026, 1, 1, 12, 7, 0),  # session 2: elapsed (2 minutes)
+                datetime(2026, 1, 1, 12, 7, 0),  # session 2: updated_at
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text=text + " five six", private=priv),
+    )
+    actions.write_today_entry(db)
+
+    entry = db.latest_entry()
+    assert entry.word_count == 6
+    assert entry.words_per_minute == 1.0  # 2 new words / 2 minutes, not 6 words / 2 minutes
+
+
+def test_write_today_entry_resume_with_no_new_words_yields_zero_wpm(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text="one two three four", private=priv),
+    )
+    actions.write_today_entry(db)
+
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text=text, private=priv),
+    )
+    actions.write_today_entry(db)
+
+    assert db.latest_entry().words_per_minute == 0.0
 
 
 def test_milestone_line_appears_when_threshold_crossed(db, monkeypatch, capsys):
