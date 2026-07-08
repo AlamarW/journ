@@ -193,39 +193,44 @@ def write_today_entry(db: Database) -> None:
     goal_met = word_count >= profile.writing_goal
     wpm = words_per_minute(word_count, elapsed)
 
-    words_before, entries_before = db.aggregate_totals()
+    # The editor session above can run for an arbitrarily long time, so only the final
+    # read-totals -> write -> streak-update sequence is wrapped atomically -- holding the
+    # write lock for the whole editing session would block any other writer (e.g. an MCP
+    # save_conversation_entry call) for as long as the user is typing.
+    with db.locked_for_write():
+        words_before, entries_before = db.aggregate_totals()
 
-    content_bytes, is_encrypted = _encode_entry(text, key)
-    db.upsert_entry(
-        JournalEntry(
-            entry_date=today,
-            content=content_bytes,
-            is_encrypted=is_encrypted,
-            words_per_minute=wpm,
-            accomplished_goal=goal_met,
-            updated_at=datetime.now().isoformat(),
-            word_count=word_count,
-            started_at=start_time.isoformat(),
+        content_bytes, is_encrypted = _encode_entry(text, key)
+        db.upsert_entry(
+            JournalEntry(
+                entry_date=today,
+                content=content_bytes,
+                is_encrypted=is_encrypted,
+                words_per_minute=wpm,
+                accomplished_goal=goal_met,
+                updated_at=datetime.now().isoformat(),
+                word_count=word_count,
+                started_at=start_time.isoformat(),
+            )
         )
-    )
 
-    words_after, entries_after = db.aggregate_totals()
+        words_after, entries_after = db.aggregate_totals()
 
-    new_streak, new_last_entry_date = update_streak(
-        profile.streak, profile.streak_last_entry_date, today, goal_met
-    )
-    db.update_streak(new_streak, new_last_entry_date)
-    if new_streak > profile.longest_streak:
-        db.update_longest_streak(new_streak)
+        new_streak, new_last_entry_date = update_streak(
+            profile.streak, profile.streak_last_entry_date, today, goal_met
+        )
+        db.update_streak(new_streak, new_last_entry_date)
+        if new_streak > profile.longest_streak:
+            db.update_longest_streak(new_streak)
 
-    milestones = analytics.detect_milestones(
-        words_before=words_before,
-        words_after=words_after,
-        entries_before=entries_before,
-        entries_after=entries_after,
-        streak_before=profile.streak,
-        streak_after=new_streak,
-    )
+        milestones = analytics.detect_milestones(
+            words_before=words_before,
+            words_after=words_after,
+            entries_before=entries_before,
+            entries_after=entries_after,
+            streak_before=profile.streak,
+            streak_after=new_streak,
+        )
 
     ui.print_write_summary(
         word_count=word_count,
@@ -236,6 +241,135 @@ def write_today_entry(db: Database) -> None:
         streak=new_streak,
         streak_changed=(new_streak != profile.streak),
         skip_goal_line=used_builtin,
+        milestones=milestones,
+    )
+
+
+@dataclass
+class ConversationTurn:
+    role: str  # "user" or "assistant"
+    text: str
+
+
+@dataclass
+class ConversationSaveResult:
+    entry_date: date
+    word_count: int
+    accomplished_goal: bool
+    streak: int
+    streak_changed: bool
+    milestones: list[tuple[str, int]]
+
+
+def _format_transcript(turns: list[ConversationTurn]) -> str:
+    speaker = {"user": "You", "assistant": "Assistant"}
+    return "\n\n".join(f"{speaker.get(t.role, t.role)}: {t.text}" for t in turns)
+
+
+def save_conversation_entry(
+    db: Database,
+    entry_date: date,
+    turns: list[ConversationTurn],
+    key: bytes | None,
+    private: bool | None = None,
+) -> ConversationSaveResult:
+    """Tier-2 MCP write action: appends a conversation transcript to entry_date's entry
+    (creating it if absent). The stored content is the full transcript (both sides), but only
+    the user's own turns count toward word_count/goal/streak -- the assistant's words never
+    do. words_per_minute is never computed or overwritten here (no meaningful typing-speed
+    signal in a back-and-forth conversation); if merging into an entry that already has a real
+    value from an earlier editor session, it's preserved untouched.
+
+    private=None preserves whatever the entry's current private flag is (False for a new
+    entry) rather than defaulting to False -- an explicit bool always overrides.
+
+    Streak/longest-streak are only updated when entry_date is today: this is the only write
+    path that can target a past date, and streak.update_streak's day-over-day logic isn't
+    built for backdating, so a saved conversation about a past day never affects your streak.
+    Word/entry milestones (pure aggregate-total deltas) still fire regardless of date.
+
+    key must already be resolved by the caller -- this never calls unlock() itself, since an
+    MCP tool call must never block on an interactive passphrase prompt.
+    """
+    with db.locked_for_write():
+        profile = db.get_profile()
+        if profile is None:
+            raise ValueError(
+                "No profile exists yet -- run `journ` once to finish first-time setup."
+            )
+
+        existing = db.get_entry(entry_date)
+        existing_text = _decode_entry(db, existing, key) if existing else ""
+        # _decode_entry backfills existing.word_count in place if it was None -- read it only
+        # after that call, not before.
+        existing_word_count = existing.word_count if existing else 0
+
+        user_text = "\n\n".join(t.text for t in turns if t.role == "user")
+        new_user_words = count_words(user_text)
+        word_count = existing_word_count + new_user_words
+
+        transcript_text = _format_transcript(turns)
+        full_text = (
+            f"{existing_text}\n\n{transcript_text}" if existing_text else transcript_text
+        )
+
+        goal_met = word_count >= profile.writing_goal
+        wpm = existing.words_per_minute if existing else None
+
+        if private is None:
+            is_private = existing.private if existing else False
+        else:
+            is_private = private
+
+        started_at = (
+            existing.started_at
+            if existing and existing.started_at
+            else datetime.now().isoformat()
+        )
+
+        words_before, entries_before = db.aggregate_totals()
+        content_bytes, is_encrypted = _encode_entry(full_text, key)
+        db.upsert_entry(
+            JournalEntry(
+                entry_date=entry_date,
+                content=content_bytes,
+                is_encrypted=is_encrypted,
+                words_per_minute=wpm,
+                accomplished_goal=goal_met,
+                updated_at=datetime.now().isoformat(),
+                word_count=word_count,
+                started_at=started_at,
+                private=is_private,
+            )
+        )
+        words_after, entries_after = db.aggregate_totals()
+
+        streak_after = profile.streak
+        streak_changed = False
+        if entry_date == date.today():
+            streak_after, new_last_entry_date = update_streak(
+                profile.streak, profile.streak_last_entry_date, entry_date, goal_met
+            )
+            db.update_streak(streak_after, new_last_entry_date)
+            if streak_after > profile.longest_streak:
+                db.update_longest_streak(streak_after)
+            streak_changed = streak_after != profile.streak
+
+        milestones = analytics.detect_milestones(
+            words_before=words_before,
+            words_after=words_after,
+            entries_before=entries_before,
+            entries_after=entries_after,
+            streak_before=profile.streak,
+            streak_after=streak_after,
+        )
+
+    return ConversationSaveResult(
+        entry_date=entry_date,
+        word_count=word_count,
+        accomplished_goal=goal_met,
+        streak=streak_after,
+        streak_changed=streak_changed,
         milestones=milestones,
     )
 

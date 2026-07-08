@@ -2,6 +2,7 @@ from datetime import date
 
 from journ import actions, config, crypto
 from journ.models import JournalEntry
+from journ.words import count_words
 
 
 def test_builtin_editor_never_touches_tmp_dir_and_skips_redundant_goal_line(
@@ -228,6 +229,183 @@ def test_set_private_marks_and_unmarks_via_action(db, capsys):
 def test_set_private_on_missing_entry_prints_message(db, capsys):
     actions.set_private(db, date(2026, 7, 1), True)
     assert "No entry found" in capsys.readouterr().out
+
+
+def test_save_conversation_entry_creates_new_entry_counts_only_user_words(db):
+    db.create_profile(writing_goal=1)
+    turns = [
+        actions.ConversationTurn(role="user", text="five user words here today"),
+        actions.ConversationTurn(
+            role="assistant", text="a much longer assistant reply with many extra words"
+        ),
+    ]
+
+    result = actions.save_conversation_entry(db, date.today(), turns, key=None)
+
+    assert result.word_count == 5
+    entry = db.get_entry(date.today())
+    assert entry.word_count == 5
+    assert entry.words_per_minute is None
+    text = entry.content.decode("utf-8")
+    assert "You:" in text
+    assert "Assistant:" in text
+    assert "much longer assistant reply" in text
+
+
+def test_save_conversation_entry_merges_with_existing_editor_entry_additive_word_count(db):
+    db.create_profile(writing_goal=1)
+    today = date.today()
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"ten prior words placeholder text right here now",
+            is_encrypted=False, words_per_minute=42.0, accomplished_goal=False,
+            updated_at="x", word_count=10,
+        )
+    )
+    turns = [actions.ConversationTurn(role="user", text="three new words")]
+
+    result = actions.save_conversation_entry(db, today, turns, key=None)
+
+    assert result.word_count == 13
+    entry = db.get_entry(today)
+    assert entry.word_count == 13
+    assert entry.words_per_minute == 42.0  # untouched, never recomputed/nulled
+
+
+def test_save_conversation_entry_backfills_null_word_count_before_merging(db):
+    db.create_profile(writing_goal=1)
+    today = date.today()
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"three word text", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x", word_count=None,
+        )
+    )
+    turns = [actions.ConversationTurn(role="user", text="two more")]
+
+    result = actions.save_conversation_entry(db, today, turns, key=None)
+
+    assert result.word_count == 5  # 3 backfilled + 2 new, not a bare 2
+
+
+def test_save_conversation_entry_appends_text_after_existing(db):
+    db.create_profile(writing_goal=1)
+    today = date.today()
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"original entry text", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x", word_count=3,
+        )
+    )
+    turns = [actions.ConversationTurn(role="user", text="new words")]
+
+    actions.save_conversation_entry(db, today, turns, key=None)
+
+    text = db.get_entry(today).content.decode("utf-8")
+    assert text.startswith("original entry text")
+    assert text.index("original entry text") < text.index("You: new words")
+
+
+def test_save_conversation_entry_private_none_preserves_existing_flag(db):
+    db.create_profile(writing_goal=1)
+    today = date.today()
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"x", is_encrypted=False, words_per_minute=None,
+            accomplished_goal=False, updated_at="x", word_count=0, private=True,
+        )
+    )
+    turns = [actions.ConversationTurn(role="user", text="hi")]
+
+    actions.save_conversation_entry(db, today, turns, key=None, private=None)
+    assert db.get_entry(today).private is True
+
+    actions.save_conversation_entry(db, today, turns, key=None, private=False)
+    assert db.get_entry(today).private is False
+
+
+def test_save_conversation_entry_only_updates_streak_when_entry_date_is_today(db):
+    db.create_profile(writing_goal=1)
+    turns = [actions.ConversationTurn(role="user", text="backdated words")]
+    backdated = date(2020, 1, 1)
+
+    result = actions.save_conversation_entry(db, backdated, turns, key=None)
+
+    assert result.streak_changed is False
+    assert db.get_profile().streak == 0
+    entry = db.get_entry(backdated)
+    assert entry.word_count == 2
+    assert entry.accomplished_goal is True
+
+
+def test_save_conversation_entry_detects_word_milestones_regardless_of_date(db):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2020, 1, 1), content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=995,
+        )
+    )
+    turns = [actions.ConversationTurn(role="user", text="six more words right here now")]
+
+    result = actions.save_conversation_entry(db, date(2019, 1, 1), turns, key=None)
+
+    assert ("words", 1000) in result.milestones
+
+
+def test_save_conversation_entry_treats_unknown_role_as_non_counting(db):
+    db.create_profile(writing_goal=1)
+    turns = [
+        actions.ConversationTurn(role="user", text="two words"),
+        actions.ConversationTurn(role="system", text="a bunch of system words that don't count"),
+    ]
+
+    result = actions.save_conversation_entry(db, date.today(), turns, key=None)
+
+    assert result.word_count == 2
+    text = db.get_entry(date.today()).content.decode("utf-8")
+    assert "system:" in text  # stored and labeled, just not counted
+
+
+def test_save_conversation_entry_encrypts_when_passphrase_set(db):
+    db.create_profile(writing_goal=1)
+    passphrase = "correct horse battery staple"
+    salt, canary = crypto.setup_passphrase(passphrase)
+    key = crypto.derive_key(passphrase, salt)
+    db.set_passphrase(salt, canary)
+    turns = [actions.ConversationTurn(role="user", text="secret thoughts here")]
+
+    actions.save_conversation_entry(db, date.today(), turns, key=key)
+
+    entry = db.get_entry(date.today())
+    assert entry.is_encrypted is True
+    assert b"secret" not in entry.content
+    assert crypto.decrypt_text(key, entry.content).startswith("You: secret thoughts here")
+
+
+def test_save_conversation_entry_and_write_today_entry_do_not_clobber_each_other(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    today = date.today()
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"prior words here", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x", word_count=3,
+        )
+    )
+
+    # Simulate a conversation save landing in between write_today_entry's initial read (used
+    # to pre-fill the editor) and its final write -- the streak/word-count bookkeeping for
+    # each write must still be internally consistent, not silently dropped.
+    turns = [actions.ConversationTurn(role="user", text="two new")]
+    actions.save_conversation_entry(db, today, turns, key=None)
+    assert db.get_entry(today).word_count == 5
+
+    monkeypatch.setattr(actions, "run_builtin_editor", lambda text, goal: text + " typed more")
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    actions.write_today_entry(db)
+
+    final = db.get_entry(today)
+    assert final.word_count == count_words(final.content.decode("utf-8"))
 
 
 def test_word_frequency_decrypts_encrypted_entries(db, monkeypatch, capsys):
