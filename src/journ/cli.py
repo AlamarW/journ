@@ -5,6 +5,7 @@ below are scriptable one-shot equivalents of the same actions, useful for aliase
 bars, or scripting -- they share their implementation with the shell via actions.py.
 """
 
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -93,6 +94,72 @@ def goal(new_goal: Optional[int] = typer.Argument(None)) -> None:
     """Show or set your daily writing goal."""
     with _open_db() as db:
         _run(lambda: actions.set_goal(db, new_goal))
+
+
+@app.command()
+def calendar() -> None:
+    """Show a heatmap of which days you've written, and your 30-day consistency."""
+    with _open_db() as db:
+        _run(lambda: actions.show_calendar(db))
+
+
+@app.command()
+def trends(days: int = typer.Option(30, "--days", help="How many days back to show.")) -> None:
+    """Show word count / goal-completion trends over recent days."""
+    with _open_db() as db:
+        _run(lambda: actions.show_trends(db, days))
+
+
+@app.command()
+def records() -> None:
+    """Show personal records: longest entry, best words-per-minute, longest streak ever."""
+    with _open_db() as db:
+        _run(lambda: actions.show_records(db))
+
+
+@app.command()
+def patterns() -> None:
+    """Show when you tend to write: by day of week and time of day."""
+    with _open_db() as db:
+        _run(lambda: actions.show_patterns(db))
+
+
+@app.command()
+def suggest() -> None:
+    """Suggest a daily writing goal based on your recent entries."""
+    with _open_db() as db:
+        _run(lambda: actions.suggest_goal_action(db))
+
+
+@app.command()
+def frequency() -> None:
+    """Show your most-used words across all entries."""
+    with _open_db() as db:
+        _run(lambda: actions.show_word_frequency(db))
+
+
+@app.command()
+def search(query: str) -> None:
+    """Search your entries for a word or phrase."""
+    with _open_db() as db:
+        _run(lambda: actions.search_journal(db, query))
+
+
+@app.command(name="on-this-day")
+def on_this_day() -> None:
+    """Show entries written on this date in previous years."""
+    with _open_db() as db:
+        _run(lambda: actions.show_on_this_day(db))
+
+
+@app.command()
+def export(
+    output_path: Path,
+    export_format: str = typer.Option("md", "--format", help="'md' or 'json'."),
+) -> None:
+    """Export all entries to a markdown or JSON file."""
+    with _open_db() as db:
+        _run(lambda: actions.export_journal(db, output_path, export_format))
 
 
 @editor_app.callback(invoke_without_command=True)

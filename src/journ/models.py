@@ -13,6 +13,7 @@ class Profile:
     streak_last_entry_date: date | None
     kdf_salt: bytes | None
     passphrase_canary: bytes | None
+    longest_streak: int = 0
 
     @property
     def has_passphrase(self) -> bool:
@@ -27,3 +28,5 @@ class JournalEntry:
     words_per_minute: float | None
     accomplished_goal: bool
     updated_at: str
+    word_count: int | None = None
+    started_at: str | None = None

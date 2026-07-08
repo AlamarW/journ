@@ -97,19 +97,38 @@ $ journ
 Each of those is also available as a scriptable one-shot command, so you don't have to open
 the shell just to check something:
 
-| Command                              | What it does                                            |
-| ------------------------------------- | -------------------------------------------------------- |
-| `journ` / `journ shell`               | Open the interactive `(journ)` shell                     |
-| `journ write`                         | Write today's entry in your editor                       |
-| `journ stats`                         | Average words-per-minute and total words written         |
-| `journ streak`                        | Current streak                                           |
-| `journ last`                          | Word count of your most recent entry                     |
-| `journ goal` / `journ goal 750`       | Show or set your daily writing goal                       |
-| `journ editor` / `journ editor set`   | Show or (re)pick your editor, including the built-in one  |
-| `journ passphrase set/change/remove`  | Manage the passphrase that encrypts your entries          |
+| Command                                | What it does                                            |
+| --------------------------------------- | -------------------------------------------------------- |
+| `journ` / `journ shell`                 | Open the interactive `(journ)` shell                     |
+| `journ write`                           | Write today's entry in your editor                       |
+| `journ stats`                           | Average words-per-minute and total words written         |
+| `journ streak`                          | Current streak                                           |
+| `journ last`                            | Word count of your most recent entry                     |
+| `journ goal` / `journ goal 750`         | Show or set your daily writing goal                       |
+| `journ editor` / `journ editor set`     | Show or (re)pick your editor, including the built-in one  |
+| `journ passphrase set/change/remove`    | Manage the passphrase that encrypts your entries          |
+| `journ calendar`                        | Heatmap of which days you've written, and consistency     |
+| `journ trends [--days N]`               | Word count / goal-completion trends over recent days      |
+| `journ records`                         | Longest entry, best words-per-minute, longest streak ever |
+| `journ patterns`                        | When you tend to write, by day of week and time of day    |
+| `journ suggest`                         | Suggests a daily goal based on your recent entries         |
+| `journ frequency`                       | Your most-used words across all entries                   |
+| `journ search <query>`                  | Search your entries for a word or phrase                  |
+| `journ on-this-day`                     | Entries written on this date in previous years             |
+| `journ export <path> [--format md/json]`| Export all entries to a markdown or JSON file              |
 
 On first run, journ asks for your daily writing goal and whether you'd like to set a
 passphrase.
+
+### Analytics, and what needs your passphrase
+
+`calendar`, `trends`, `records`, `patterns`, `streak`, `stats`, and `suggest` work from
+metadata alone (word counts, dates, timing) -- they never prompt for your passphrase, even
+on an encrypted journal. `frequency`, `search`, `export`, and `on-this-day` need the actual
+entry text, so they decrypt on demand and do prompt.
+
+Milestones (word-count, entry-count, and streak thresholds) are surfaced automatically as
+part of the `write` summary when you cross one -- there's no separate command for these.
 
 ## Your entries, protected
 
@@ -124,6 +143,10 @@ The one exposure, if you use an external editor: while it has today's entry open
 sitting in a plaintext temp file under `~/.journ/tmp`, deleted as soon as you close the
 editor — external editors need a real file on disk to edit. journ's built-in editor
 (`journ editor set`) doesn't have this exposure at all; it holds the entry in memory only.
+
+`journ export` writes a plaintext file by design (that's the point of exporting), so on an
+encrypted journal it asks for confirmation before writing anything, since the exported file
+itself won't be encrypted regardless of your passphrase.
 
 ## Development
 

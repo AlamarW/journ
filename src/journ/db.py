@@ -33,10 +33,42 @@ CREATE TABLE IF NOT EXISTS journal_entry (
 );
 """
 
-_PROFILE_COLUMNS = "writing_goal, streak, streak_last_entry_date, kdf_salt, passphrase_canary"
-_ENTRY_COLUMNS = (
-    "entry_date, content, is_encrypted, words_per_minute, accomplished_goal, updated_at"
+_PROFILE_COLUMNS = (
+    "writing_goal, streak, streak_last_entry_date, kdf_salt, passphrase_canary, longest_streak"
 )
+_ENTRY_COLUMNS = (
+    "entry_date, content, is_encrypted, words_per_minute, accomplished_goal, updated_at, "
+    "word_count, started_at"
+)
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive schema upgrades for dbs created before analytics support was added.
+
+    Safe to run on every connect: each step is guarded by a column-existence check, so it's
+    a no-op once a database is up to date.
+    """
+    if not _column_exists(conn, "journal_entry", "word_count"):
+        conn.execute("ALTER TABLE journal_entry ADD COLUMN word_count INTEGER")
+        # Left NULL on purpose -- backfilling would require decrypting every entry, which
+        # would force a passphrase prompt just to open the database. Database.update_word_count
+        # backfills lazily, the first time each entry is decrypted for another reason.
+
+    if not _column_exists(conn, "journal_entry", "started_at"):
+        conn.execute("ALTER TABLE journal_entry ADD COLUMN started_at TEXT")
+        conn.execute("UPDATE journal_entry SET started_at = updated_at WHERE started_at IS NULL")
+
+    if not _column_exists(conn, "profile", "longest_streak"):
+        conn.execute("ALTER TABLE profile ADD COLUMN longest_streak INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "UPDATE profile SET longest_streak = streak WHERE longest_streak < streak"
+        )
+
+    conn.commit()
 
 
 class Database:
@@ -46,6 +78,7 @@ class Database:
         self.conn = sqlite3.connect(self.path)
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
+        _migrate(self.conn)
 
     def __enter__(self) -> Database:
         return self
@@ -73,7 +106,7 @@ class Database:
     ) -> Profile:
         self.conn.execute(
             "INSERT INTO profile (id, writing_goal, streak, streak_last_entry_date, kdf_salt, "
-            "passphrase_canary) VALUES (1, ?, 0, NULL, ?, ?)",
+            "passphrase_canary, longest_streak) VALUES (1, ?, 0, NULL, ?, ?, 0)",
             (writing_goal, kdf_salt, passphrase_canary),
         )
         return Profile(
@@ -82,6 +115,7 @@ class Database:
             streak_last_entry_date=None,
             kdf_salt=kdf_salt,
             passphrase_canary=passphrase_canary,
+            longest_streak=0,
         )
 
     def update_goal(self, writing_goal: int) -> None:
@@ -91,6 +125,11 @@ class Database:
         self.conn.execute(
             "UPDATE profile SET streak = ?, streak_last_entry_date = ? WHERE id = 1",
             (streak, last_entry_date.isoformat() if last_entry_date else None),
+        )
+
+    def update_longest_streak(self, longest_streak: int) -> None:
+        self.conn.execute(
+            "UPDATE profile SET longest_streak = ? WHERE id = 1", (longest_streak,)
         )
 
     def set_passphrase(self, kdf_salt: bytes | None, canary: bytes | None) -> None:
@@ -122,10 +161,11 @@ class Database:
 
     def upsert_entry(self, entry: JournalEntry) -> None:
         self.conn.execute(
-            f"INSERT INTO journal_entry ({_ENTRY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?) "
+            f"INSERT INTO journal_entry ({_ENTRY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(entry_date) DO UPDATE SET content=excluded.content, "
             "is_encrypted=excluded.is_encrypted, words_per_minute=excluded.words_per_minute, "
-            "accomplished_goal=excluded.accomplished_goal, updated_at=excluded.updated_at",
+            "accomplished_goal=excluded.accomplished_goal, updated_at=excluded.updated_at, "
+            "word_count=excluded.word_count, started_at=excluded.started_at",
             (
                 entry.entry_date.isoformat(),
                 entry.content,
@@ -133,12 +173,38 @@ class Database:
                 entry.words_per_minute,
                 int(entry.accomplished_goal),
                 entry.updated_at,
+                entry.word_count,
+                entry.started_at,
             ),
         )
 
+    def update_word_count(self, entry_date: date, word_count: int) -> None:
+        """Lazily backfills word_count for entries written before it was tracked, the first
+        time each one is decrypted for another reason (see _migrate)."""
+        self.conn.execute(
+            "UPDATE journal_entry SET word_count = ? WHERE entry_date = ?",
+            (word_count, entry_date.isoformat()),
+        )
+
+    def aggregate_totals(self) -> tuple[int, int]:
+        """Returns (total_words, entry_count) from stored word_count metadata only -- no
+        decryption needed. Entries with a NULL word_count (not yet backfilled) are excluded
+        from the word total but still counted as entries."""
+        row = self.conn.execute(
+            "SELECT COALESCE(SUM(word_count), 0), COUNT(*) FROM journal_entry"
+        ).fetchone()
+        return row[0], row[1]
+
     @staticmethod
     def _row_to_profile(row) -> Profile:
-        writing_goal, streak, streak_last_entry_date, kdf_salt, passphrase_canary = row
+        (
+            writing_goal,
+            streak,
+            streak_last_entry_date,
+            kdf_salt,
+            passphrase_canary,
+            longest_streak,
+        ) = row
         return Profile(
             writing_goal=writing_goal,
             streak=streak,
@@ -147,11 +213,21 @@ class Database:
             ),
             kdf_salt=kdf_salt,
             passphrase_canary=passphrase_canary,
+            longest_streak=longest_streak,
         )
 
     @staticmethod
     def _row_to_entry(row) -> JournalEntry:
-        entry_date, content, is_encrypted, words_per_minute, accomplished_goal, updated_at = row
+        (
+            entry_date,
+            content,
+            is_encrypted,
+            words_per_minute,
+            accomplished_goal,
+            updated_at,
+            word_count,
+            started_at,
+        ) = row
         return JournalEntry(
             entry_date=date.fromisoformat(entry_date),
             content=content,
@@ -159,4 +235,6 @@ class Database:
             words_per_minute=words_per_minute,
             accomplished_goal=bool(accomplished_goal),
             updated_at=updated_at,
+            word_count=word_count,
+            started_at=started_at,
         )
