@@ -11,13 +11,13 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
-from journ import analytics, config, content, crypto, ui
+from journ import analytics, config, content, crypto, mcp_keychain, ui
 from journ.builtin_editor import run_builtin_editor
 from journ.content import DecryptedEntry
 from journ.db import Database
 from journ.models import JournalEntry, Profile
 from journ.streak import update_streak
-from journ.words import count_words, words_per_minute
+from journ.words import count_words, format_elapsed, words_per_minute
 
 
 class PassphraseError(Exception):
@@ -497,6 +497,45 @@ def _reencrypt_all(
         content_bytes, is_encrypted = _encode_entry(text, new_key)
         db.upsert_entry(replace(entry, content=content_bytes, is_encrypted=is_encrypted))
     db.set_passphrase(new_salt, new_canary)
+
+
+def mcp_unlock(db: Database) -> None:
+    """Caches the derived passphrase key in the OS credential store, so a headlessly-spawned
+    `journ mcp serve --content` can decrypt content without an interactive prompt."""
+    profile, _key = ensure_profile(db)
+    if not profile.has_passphrase:
+        print(
+            "This journal has no passphrase -- nothing to cache. `journ mcp serve --content` "
+            "will work without unlocking."
+        )
+        return
+    key = unlock(profile)
+    try:
+        mcp_keychain.cache_key(key)
+    except mcp_keychain.KeychainError as exc:
+        print(f"Could not cache the key: {exc}")
+        return
+    print("Key cached indefinitely in your OS credential store -- run `journ mcp lock` when done.")
+
+
+def mcp_lock() -> None:
+    mcp_keychain.clear_cached_key()
+    print("Cached key removed.")
+
+
+def mcp_status() -> None:
+    cached_at = mcp_keychain.get_cached_at()
+    if cached_at is None:
+        print(
+            "No key is currently cached. Run `journ mcp unlock` before using "
+            "`journ mcp serve --content` on an encrypted journal."
+        )
+        return
+    elapsed_str = format_elapsed(datetime.now() - cached_at)
+    print(
+        f"A key has been cached for {elapsed_str}. Run `journ mcp lock` when you're done "
+        "using content-tier MCP tools."
+    )
 
 
 # --- metadata-only analytics (no passphrase needed once word_count/started_at are backfilled) ---

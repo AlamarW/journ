@@ -5,6 +5,7 @@ below are scriptable one-shot equivalents of the same actions, useful for aliase
 bars, or scripting -- they share their implementation with the shell via actions.py.
 """
 
+from datetime import date
 from pathlib import Path
 
 import typer
@@ -25,6 +26,9 @@ app.add_typer(passphrase_app, name="passphrase")
 
 editor_app = typer.Typer(help="Show or change the editor journ uses.")
 app.add_typer(editor_app, name="editor")
+
+mcp_app = typer.Typer(help="Run journ as an MCP server for LLM clients, and manage the cached key.")
+app.add_typer(mcp_app, name="mcp")
 
 
 def _open_db() -> Database:
@@ -152,6 +156,18 @@ def on_this_day() -> None:
 
 
 @app.command()
+def private(
+    entry_date: str = typer.Argument(..., help="ISO date (YYYY-MM-DD) of the entry to flag."),
+    unset: bool = typer.Option(
+        False, "--unset", help="Remove the private flag instead of setting it."
+    ),
+) -> None:
+    """Flag (or unflag) an entry as private, excluding it from MCP content tools by default."""
+    with _open_db() as db:
+        _run(lambda: actions.set_private(db, date.fromisoformat(entry_date), not unset))
+
+
+@app.command()
 def export(
     output_path: Path,
     export_format: str = typer.Option("md", "--format", help="'md' or 'json'."),
@@ -193,6 +209,50 @@ def passphrase_remove() -> None:
     """Remove your passphrase (entries are re-stored unencrypted)."""
     with _open_db() as db:
         _run(lambda: actions.manage_passphrase(db, "remove"))
+
+
+@mcp_app.command("unlock")
+def mcp_unlock() -> None:
+    """Cache your derived passphrase key in the OS credential store, for
+    `journ mcp serve --content`."""
+    with _open_db() as db:
+        _run(lambda: actions.mcp_unlock(db))
+
+
+@mcp_app.command("lock")
+def mcp_lock() -> None:
+    """Remove the cached passphrase key from the OS credential store."""
+    _run(actions.mcp_lock)
+
+
+@mcp_app.command("status")
+def mcp_status() -> None:
+    """Show whether a passphrase key is currently cached for the MCP server."""
+    _run(actions.mcp_status)
+
+
+@mcp_app.command("serve")
+def mcp_serve(
+    content: bool = typer.Option(
+        False, "--content", help="Enable Tier 2 content tools (search/read/save entries)."
+    ),
+    mcp_private: bool = typer.Option(
+        False, "--private", help="Include private entries in Tier 2 tools (requires --content)."
+    ),
+) -> None:
+    """Start journ's MCP server over stdio, for use with an MCP-capable LLM client."""
+    from journ.mcp_server import MCPStartupError, run_server
+
+    if mcp_private and not content:
+        typer.echo("--private requires --content.")
+        raise typer.Exit(code=1)
+
+    with _open_db() as db:
+        try:
+            run_server(db, content=content, private=mcp_private)
+        except MCPStartupError as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(code=1) from exc
 
 
 if __name__ == "__main__":
