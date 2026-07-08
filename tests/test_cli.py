@@ -75,6 +75,9 @@ def test_editor_show_then_set_builtin(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "journ_config_dir", tmp_path / ".journ")
     monkeypatch.setattr(config, "editor_config_filepath", tmp_path / ".journ" / "editor.cfg")
     monkeypatch.delenv("EDITOR", raising=False)
+    # "Currently using" wording is platform-dependent (see actions.manage_editor); pin it
+    # so this test is deterministic regardless of which OS actually runs it in CI.
+    monkeypatch.setattr(config.os, "name", "posix")
 
     result = runner.invoke(cli.app, ["editor"])
     assert result.exit_code == 0, result.output
