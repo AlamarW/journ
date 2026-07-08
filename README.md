@@ -10,19 +10,64 @@ It's helpful to have a word counter in your text editor of choice, but journ wil
 
 ## Installation
 
-journ uses [uv](https://docs.astral.sh/uv/) for packaging.
+journ uses [uv](https://docs.astral.sh/uv/) for packaging. Install it as a standalone tool so
+the `journ` command is on your `PATH` and works from any directory, not just the repo:
 
 ```sh
 git clone https://github.com/AlamarW/journ.git
 cd journ
-uv sync
-uv run journ
+uv tool install .
+journ
 ```
+
+`uv tool install` builds journ into its own isolated environment and links the `journ`
+command into `uv`'s tool bin directory (`~/.local/bin` on Linux/macOS,
+`%APPDATA%\uv\bin` on Windows). If `journ` isn't found after installing, that directory
+probably isn't on your `PATH` yet — run `uv tool update-shell` to fix that, then restart your
+shell.
+
+To upgrade after pulling new changes: `uv tool install . --reinstall` from the repo directory.
+
+If you're contributing to journ itself rather than just using it, see
+[Development](#development) below instead — that runs it from the repo without a global
+install.
 
 `journ` also works on native Windows/PowerShell, not just WSL. On first run, if no `EDITOR`
 environment variable is set, Windows users get a one-time picker to choose a text editor
 (Notepad, VS Code, Notepad++, Sublime, Vim, or a custom command); the choice is remembered
 for next time.
+
+## Choosing your editor
+
+journ opens today's entry in whatever `$EDITOR` (or `$env:EDITOR` on PowerShell) is set to.
+If it's unset, journ falls back to `nano` on macOS/Linux, or (on Windows only) offers an
+interactive picker the first time and remembers your choice afterward — see above.
+
+To set it yourself:
+
+```sh
+# bash / zsh — add to ~/.bashrc or ~/.zshrc
+export EDITOR="nvim"
+```
+
+```powershell
+# PowerShell — add to your $PROFILE to persist it
+$env:EDITOR = "code --wait"
+```
+
+A few things worth knowing when picking a command:
+
+- **GUI editors need a flag that makes them wait.** journ launches your editor and waits for
+  it to exit before reading back what you wrote; editors like VS Code or Sublime normally
+  hand control back to the shell immediately, so you need their wait flag: `code --wait` or
+  `subl --wait`. Terminal editors (`nvim`, `vim`, `nano`, `emacs -nw`) block naturally and
+  don't need this.
+- **Multi-word commands work.** `EDITOR="code --wait"` is parsed correctly into the command
+  plus its arguments on both POSIX shells and PowerShell.
+- **Windows paths with spaces need quotes**, e.g.
+  `$env:EDITOR = '"C:\Program Files\Notepad++\notepad++.exe" -multiInst'`.
+- **To change a saved Windows picker choice**, either set `$env:EDITOR` (which always takes
+  priority), or delete `~/.journ/editor.cfg` to get the picker again next run.
 
 ## Usage
 
@@ -69,6 +114,7 @@ editors need a real file on disk to edit.
 
 ```sh
 uv sync
+uv run journ        # run your working copy without a global install
 uv run pytest
 uv run ruff check .
 ```
