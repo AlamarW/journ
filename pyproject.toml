@@ -8,6 +8,7 @@ requires-python = ">=3.9"
 dependencies = [
     "typer>=0.12",
     "rich>=13",
+    "textual>=0.80",
     "cryptography>=42",
     "pyreadline3; platform_system == 'Windows'",
 ]
@@ -21,6 +22,7 @@ journ = "journ.cli:app"
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "pytest-asyncio>=0.24",
     "ruff>=0.6",
 ]
 
@@ -40,3 +42,4 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
