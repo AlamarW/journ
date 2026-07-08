@@ -644,7 +644,7 @@ def search_journal(db: Database, query: str) -> None:
     ui.print_search_results(query, get_search_results(db, profile, key, query))
 
 
-def _on_this_day_matches(
+def on_this_day_matches(
     entries: list[JournalEntry], today: date | None = None
 ) -> list[JournalEntry]:
     today = today or date.today()
@@ -665,7 +665,7 @@ def get_on_this_day(
     entries: list[JournalEntry] | None = None,
 ) -> list[DecryptedEntry]:
     if entries is None:
-        entries = _on_this_day_matches(db.all_entries(), today=today)
+        entries = on_this_day_matches(db.all_entries(), today=today)
     return all_decrypted(db, profile, key, entries=entries)
 
 
