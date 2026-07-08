@@ -10,6 +10,9 @@ setup(
     description="A CLI Journaling that honors your text editor of choice",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
+    install_requires=[
+        "pyreadline3; platform_system == 'Windows'",
+    ],
     entry_points={
         "console_scripts": [
             "journ=journ.main:main",

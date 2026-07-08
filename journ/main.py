@@ -1,14 +1,18 @@
 import cmd
+import shlex
+import shutil
 import sqlite3
 import sys
 from datetime import datetime, date, timedelta
-from os import system, name, getenv, remove, path, listdir, getcwd, makedirs
+from os import system, name, getenv, remove, path, listdir, makedirs
 import subprocess
-import tempfile
 import time
 
 home_dir = path.expanduser("~")
-journal_filepath = path.join(home_dir,".journ", "journal.db")
+journ_config_dir = path.join(home_dir, ".journ")
+journal_filepath = path.join(journ_config_dir, "journal.db")
+journ_tmp_dir = path.join(journ_config_dir, "tmp")
+editor_config_filepath = path.join(journ_config_dir, "editor.cfg")
 makedirs(path.dirname(journal_filepath), exist_ok=True)
 
 conn = sqlite3.connect(journal_filepath)
@@ -38,6 +42,88 @@ cursor.execute(
 )
 
 conn.commit()
+
+WINDOWS_EDITOR_CHOICES = [
+    ("notepad", "Notepad (built into Windows)"),
+    ("code --wait", "Visual Studio Code"),
+    ("notepad++", "Notepad++"),
+    ("subl --wait", "Sublime Text"),
+    ("vim", "Vim"),
+]
+
+
+def _read_saved_editor():
+    if path.isfile(editor_config_filepath):
+        with open(editor_config_filepath, "r", encoding="utf-8") as config_file:
+            saved_editor = config_file.read().strip()
+            if saved_editor:
+                return saved_editor
+    return None
+
+
+def _save_editor(editor_command):
+    makedirs(journ_config_dir, exist_ok=True)
+    with open(editor_config_filepath, "w", encoding="utf-8") as config_file:
+        config_file.write(editor_command)
+
+
+def _prompt_windows_editor_choice():
+    print("No EDITOR environment variable is set.")
+    print("Pick a text editor for journ to use (this choice is saved for next time):\n")
+
+    available_choices = []
+    for command, label in WINDOWS_EDITOR_CHOICES:
+        executable = command.split(" ")[0]
+        if executable == "notepad" or shutil.which(executable):
+            available_choices.append((command, label))
+
+    for index, (command, label) in enumerate(available_choices, start=1):
+        print(f"  {index}. {label}  ({command})")
+    custom_choice_number = len(available_choices) + 1
+    print(f"  {custom_choice_number}. Enter a custom command")
+
+    while True:
+        choice = input("Choice -> ").strip()
+        try:
+            choice_number = int(choice)
+        except ValueError:
+            print("Please enter a number")
+            continue
+
+        if 1 <= choice_number <= len(available_choices):
+            return available_choices[choice_number - 1][0]
+        elif choice_number == custom_choice_number:
+            custom_command = input("Enter the editor command (e.g. 'code --wait') -> ").strip()
+            if custom_command:
+                return custom_command
+        else:
+            print("Invalid choice, try again")
+
+
+def get_editor():
+    """Resolve the text editor to use: EDITOR env var, saved choice, or (on Windows) a picker."""
+    editor = getenv("EDITOR")
+    if editor:
+        return editor
+
+    saved_editor = _read_saved_editor()
+    if saved_editor:
+        return saved_editor
+
+    if name == "nt":
+        chosen_editor = _prompt_windows_editor_choice()
+        _save_editor(chosen_editor)
+        print(
+            f"Using '{chosen_editor}' as your editor going forward. "
+            f"Change it anytime by setting $env:EDITOR, or by deleting {editor_config_filepath}\n"
+        )
+        return chosen_editor
+
+    print(
+        "No EDITOR environment variable set, defaulting to 'nano'. "
+        "Set EDITOR to use a different editor (e.g. export EDITOR=vim)."
+    )
+    return "nano"
 
 
 class User:
@@ -194,14 +280,15 @@ class JournalingShell(cmd.Cmd):
         file_prefix = f"{today_date.month}{today_date.day}{today_date.year}"
         file_string = f"{file_prefix}.txt"
         JournalingShell.clear()
-        editor = getenv("EDITOR", "nano")
+        editor = get_editor()
 
-        if not path.isfile(file_string):
-            directory = getcwd()
-            for filename in listdir(directory):
+        makedirs(journ_tmp_dir, exist_ok=True)
+        file_path_full = path.join(journ_tmp_dir, file_string)
+
+        if not path.isfile(file_path_full):
+            for filename in listdir(journ_tmp_dir):
                 if filename.endswith(".txt"):
-                    file_path = path.join(directory, filename)
-                    remove(file_path)
+                    remove(path.join(journ_tmp_dir, filename))
         try:
             cursor.execute(
                 """SELECT journal_text FROM journal_session WHERE session_name=? AND user_id=?""", [file_prefix,User.user_id],
@@ -211,16 +298,22 @@ class JournalingShell(cmd.Cmd):
             journ_data = ""
             User.streak_added = False
 
-        with open (file_string, "w") as temp_file:
+        with open(file_path_full, "w", encoding="utf-8") as temp_file:
             temp_file.write(journ_data)
 
-        subprocess.run([editor,file_string])
+        editor_command = shlex.split(editor, posix=(name != "nt"))
+        try:
+            subprocess.run(editor_command + [file_path_full], shell=(name == "nt"))
+        except FileNotFoundError:
+            print(f"Could not launch editor '{editor}'. Set EDITOR to a valid command and try again.")
+            remove(file_path_full)
+            return
 
-        with open (file_string, "r") as temp_file:
+        with open(file_path_full, "r", encoding="utf-8") as temp_file:
             edited_content = temp_file.read()
 
         contents = edited_content
-        remove(file_string)
+        remove(file_path_full)
         journal_length = len(contents.split())
 
         if journal_length >= User.writing_goal :
