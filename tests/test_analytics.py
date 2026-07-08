@@ -112,24 +112,36 @@ def test_writing_pattern_buckets_by_day_and_time():
 
 def test_detect_milestones_crossing_and_not_crossing():
     crossed = analytics.detect_milestones(
-        words_before=900, words_after=1200, entries_before=9, entries_after=10,
-        streak_before=6, streak_after=7,
+        words_before=900,
+        words_after=1200,
+        entries_before=9,
+        entries_after=10,
+        streak_before=6,
+        streak_after=7,
     )
     assert ("words", 1_000) in crossed
     assert ("entries", 10) in crossed
     assert ("streak", 7) in crossed
 
     not_crossed = analytics.detect_milestones(
-        words_before=1_500, words_after=1_800, entries_before=12, entries_after=13,
-        streak_before=8, streak_after=9,
+        words_before=1_500,
+        words_after=1_800,
+        entries_before=12,
+        entries_after=13,
+        streak_before=8,
+        streak_after=9,
     )
     assert not_crossed == []
 
 
 def test_detect_milestones_can_cross_multiple_thresholds_at_once():
     crossed = analytics.detect_milestones(
-        words_before=900, words_after=6_000, entries_before=0, entries_after=0,
-        streak_before=0, streak_after=0,
+        words_before=900,
+        words_after=6_000,
+        entries_before=0,
+        entries_after=0,
+        streak_before=0,
+        streak_after=0,
     )
     kinds = [t for kind, t in crossed if kind == "words"]
     assert kinds == [1_000, 5_000]
@@ -147,4 +159,10 @@ def test_suggest_goal_close_to_current_returns_none():
 def test_suggest_goal_meaningfully_different_suggests_rounded_value():
     entries = [make_entry(TODAY - timedelta(days=i), word_count=400) for i in range(5)]
     suggested = analytics.suggest_goal(entries, current_goal=750, today=TODAY)
+    assert suggested == 400
+
+
+def test_suggest_goal_with_zero_current_goal_still_suggests():
+    entries = [make_entry(TODAY - timedelta(days=i), word_count=400) for i in range(5)]
+    suggested = analytics.suggest_goal(entries, current_goal=0, today=TODAY)
     assert suggested == 400

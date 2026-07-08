@@ -205,6 +205,6 @@ def suggest_goal(
 
     average = sum(recent) / len(recent)
     suggested = max(50, round(average / 50) * 50)
-    if current_goal == 0 or abs(suggested - current_goal) / current_goal < 0.10:
+    if current_goal != 0 and abs(suggested - current_goal) / current_goal < 0.10:
         return None
     return suggested
