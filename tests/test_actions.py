@@ -161,6 +161,196 @@ def test_write_today_entry_resume_with_no_new_words_yields_zero_wpm(db, monkeypa
     assert db.latest_entry().words_per_minute == 0.0
 
 
+def test_edit_entry_refuses_to_edit_today(db, capsys):
+    db.create_profile(writing_goal=1)
+    actions.edit_entry(db, date.today())
+    assert "Use `write`" in capsys.readouterr().out
+
+
+def test_edit_entry_refuses_to_edit_future_date(db, capsys):
+    db.create_profile(writing_goal=1)
+    actions.edit_entry(db, date.today() + timedelta(days=1))
+    assert "Use `write`" in capsys.readouterr().out
+
+
+def test_edit_entry_recomputes_word_count_and_replaces_text(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    past = date(2026, 7, 1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=past,
+            content=b"old words here",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=False,
+            updated_at="x",
+            word_count=3,
+        )
+    )
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False, entry_date=None: EditorResult(
+            text="brand new replacement text here", private=priv
+        ),
+    )
+
+    actions.edit_entry(db, past)
+
+    entry = db.get_entry(past)
+    assert entry.content.decode("utf-8") == "brand new replacement text here"
+    assert entry.word_count == 5
+
+
+def test_edit_entry_never_touches_wpm_or_started_at(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    past = date(2026, 7, 1)
+    original_started_at = datetime(2026, 7, 1, 9, 0).isoformat()
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=past,
+            content=b"old words here",
+            is_encrypted=False,
+            words_per_minute=42.0,
+            accomplished_goal=False,
+            updated_at="x",
+            word_count=3,
+            started_at=original_started_at,
+        )
+    )
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False, entry_date=None: EditorResult(
+            text=text + " a few more words", private=priv
+        ),
+    )
+
+    actions.edit_entry(db, past)
+
+    entry = db.get_entry(past)
+    assert entry.words_per_minute == 42.0
+    assert entry.started_at == original_started_at
+
+
+def test_edit_entry_backfills_entry_with_no_prior_data(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    past = date(2026, 7, 1)
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False, entry_date=None: EditorResult(
+            text="a brand new backfilled entry", private=priv
+        ),
+    )
+
+    actions.edit_entry(db, past)
+
+    entry = db.get_entry(past)
+    assert entry is not None
+    assert entry.word_count == 5
+    assert entry.words_per_minute is None
+    assert entry.started_at is None
+
+
+def test_edit_entry_reconciles_streak_upward_when_edit_newly_meets_goal(db, monkeypatch):
+    db.create_profile(writing_goal=3)
+    gap_day = date(2026, 7, 2)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1),
+            content=b"x",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=True,
+            updated_at="x",
+            word_count=5,
+        )
+    )
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 3),
+            content=b"x",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=True,
+            updated_at="x",
+            word_count=5,
+        )
+    )
+    db.update_streak(1, date(2026, 7, 3))
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False, entry_date=None: EditorResult(
+            text="fills the gap nicely", private=priv
+        ),
+    )
+
+    actions.edit_entry(db, gap_day)
+
+    assert db.get_profile().streak == 3
+
+
+def test_edit_entry_reconciles_streak_downward_when_edit_drops_below_goal(db, monkeypatch):
+    db.create_profile(writing_goal=3)
+    past = date(2026, 7, 1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=past,
+            content=b"three words here",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=True,
+            updated_at="x",
+            word_count=3,
+        )
+    )
+    db.update_streak(1, past)
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False, entry_date=None: EditorResult(text="one", private=priv),
+    )
+
+    actions.edit_entry(db, past)
+
+    assert db.get_profile().streak == 0
+
+
+def test_edit_entry_preserves_private_flag_by_default_and_override(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    past = date(2026, 7, 1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=past,
+            content=b"x",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=False,
+            updated_at="x",
+            private=True,
+        )
+    )
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False, entry_date=None: EditorResult(text="edited", private=priv),
+    )
+
+    actions.edit_entry(db, past)
+    assert db.get_entry(past).private is True
+
+    actions.edit_entry(db, past, private=False)
+    assert db.get_entry(past).private is False
+
+
 def test_milestone_line_appears_when_threshold_crossed(db, monkeypatch, capsys):
     db.create_profile(writing_goal=1)
     # Seed a prior day close to the 1,000-word milestone.

@@ -41,8 +41,12 @@ def test_help_with_argument_shows_single_command_detail(db, capsys):
 def test_do_private_marks_and_unmarks_entry(db, capsys):
     db.upsert_entry(
         JournalEntry(
-            entry_date=date(2026, 7, 1), content=b"x", is_encrypted=False,
-            words_per_minute=None, accomplished_goal=False, updated_at="x",
+            entry_date=date(2026, 7, 1),
+            content=b"x",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=False,
+            updated_at="x",
         )
     )
     shell = JournalingShell(db)
@@ -67,3 +71,24 @@ def test_do_write_rejects_unknown_argument(db, capsys):
     shell = JournalingShell(db)
     shell.do_write("nonsense")
     assert "Usage: write" in capsys.readouterr().out
+
+
+def test_do_edit_rejects_bad_date(db, capsys):
+    db.create_profile(writing_goal=750)
+    shell = JournalingShell(db)
+    shell.do_edit("not-a-date")
+    assert "YYYY-MM-DD" in capsys.readouterr().out
+
+
+def test_do_edit_rejects_unknown_flag(db, capsys):
+    db.create_profile(writing_goal=750)
+    shell = JournalingShell(db)
+    shell.do_edit("2026-07-01 nonsense")
+    assert "Usage: edit" in capsys.readouterr().out
+
+
+def test_do_edit_rejects_no_argument(db, capsys):
+    db.create_profile(writing_goal=750)
+    shell = JournalingShell(db)
+    shell.do_edit("")
+    assert "Usage: edit" in capsys.readouterr().out

@@ -281,6 +281,118 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
     )
 
 
+def edit_entry(db: Database, entry_date: date, private: bool | None = None) -> None:
+    """Retroactively edit a past entry, or backfill a day that has no entry at all. Unlike
+    write_today_entry there's no live session to time, so words_per_minute and started_at are
+    always carried over from the existing entry untouched (None for a brand-new backfilled
+    entry) rather than recomputed -- fabricating either would misrepresent a session that
+    never happened.
+
+    Streak/longest-streak are always fully reconciled afterward (streak.recompute_streak via
+    reconcile_streak), never incrementally patched: a retroactive edit can newly satisfy a
+    day's goal it previously missed (extending or starting a streak run wherever the date
+    falls) or newly fall short of a goal it previously met (breaking a run). Both directions
+    are intentional -- the streak should always honestly reflect accomplished_goal across every
+    entry, not just the ones edited most recently.
+    """
+    if entry_date >= date.today():
+        print("Use `write` to edit today's entry.")
+        return
+
+    profile, key = ensure_profile(db)
+    if key is None:
+        key = unlock(profile)
+
+    existing = db.get_entry(entry_date)
+    is_new_entry = existing is None
+    existing_text = _decode_entry(db, existing, key) if existing else ""
+    initial_private = existing.private if existing else False
+    if private is not None:
+        initial_private = private
+
+    editor = config.get_editor()
+    used_builtin = editor == config.BUILTIN_EDITOR
+
+    if used_builtin:
+        result = run_builtin_editor(
+            existing_text, profile.writing_goal, initial_private, entry_date=entry_date
+        )
+        if result is None:
+            print("Discarded -- no changes saved.")
+            return
+        text = result.text
+        is_private = result.private
+    else:
+        is_private = initial_private
+        config.journ_tmp_dir.mkdir(parents=True, exist_ok=True)
+        scratch_path = config.journ_tmp_dir / f"{entry_date.isoformat()}.txt"
+
+        for leftover in config.journ_tmp_dir.glob("*.txt"):
+            if leftover != scratch_path:
+                leftover.unlink()
+
+        scratch_path.write_text(existing_text, encoding="utf-8")
+        print(f"Editing entry for {entry_date.isoformat()} in {editor}...")
+        try:
+            subprocess.run(
+                config.editor_argv(editor) + [str(scratch_path)],
+                shell=(os.name == "nt"),
+            )
+        except FileNotFoundError:
+            scratch_path.unlink(missing_ok=True)
+            print(
+                f"Could not launch editor '{editor}'. Set EDITOR to a valid command and try again."
+            )
+            return
+        text = scratch_path.read_text(encoding="utf-8")
+        scratch_path.unlink(missing_ok=True)
+
+    word_count = count_words(text)
+    goal_met = word_count >= profile.writing_goal
+
+    with db.locked_for_write():
+        words_before, entries_before = db.aggregate_totals()
+
+        content_bytes, is_encrypted = _encode_entry(text, key)
+        db.upsert_entry(
+            JournalEntry(
+                entry_date=entry_date,
+                content=content_bytes,
+                is_encrypted=is_encrypted,
+                words_per_minute=existing.words_per_minute if existing else None,
+                accomplished_goal=goal_met,
+                updated_at=datetime.now().isoformat(),
+                word_count=word_count,
+                started_at=existing.started_at if existing else None,
+                private=is_private,
+            )
+        )
+
+        words_after, entries_after = db.aggregate_totals()
+        streak_after = reconcile_streak(db)
+
+        milestones = analytics.detect_milestones(
+            words_before=words_before,
+            words_after=words_after,
+            entries_before=entries_before,
+            entries_after=entries_after,
+            streak_before=profile.streak,
+            streak_after=streak_after,
+        )
+
+    ui.print_edit_summary(
+        entry_date=entry_date,
+        is_new_entry=is_new_entry,
+        word_count=word_count,
+        writing_goal=profile.writing_goal,
+        goal_met=goal_met,
+        streak=streak_after,
+        streak_changed=(streak_after != profile.streak),
+        milestones=milestones,
+        private=is_private,
+    )
+
+
 @dataclass
 class ConversationTurn:
     role: str  # "user" or "assistant"

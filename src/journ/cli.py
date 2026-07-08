@@ -85,6 +85,25 @@ def write(
 
 
 @app.command()
+def edit(
+    entry_date: str = typer.Argument(..., help="ISO date (YYYY-MM-DD) of the entry to edit."),
+    private: bool = typer.Option(
+        False, "--private", help="Mark the entry private (initial state for the built-in editor)."
+    ),
+    unprivate: bool = typer.Option(False, "--unprivate", help="Clear the entry's private flag."),
+) -> None:
+    """Edit (or backfill) a past day's entry in your text editor."""
+    if private and unprivate:
+        typer.echo("--private and --unprivate can't both be set.")
+        raise typer.Exit(code=1)
+    resolved_private = True if private else (False if unprivate else None)
+    with _open_db() as db:
+        _run(
+            lambda: actions.edit_entry(db, date.fromisoformat(entry_date), private=resolved_private)
+        )
+
+
+@app.command()
 def stats() -> None:
     """Show your average words-per-minute and total words written."""
     with _open_db() as db:

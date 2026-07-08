@@ -1,5 +1,5 @@
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 from typer.testing import CliRunner
 
@@ -102,8 +102,14 @@ def test_metadata_analytics_commands_smoke(tmp_path, monkeypatch):
     result = runner.invoke(cli.app, ["write"], input="5\nn\n")
     assert result.exit_code == 0, result.output
 
-    for command in (["calendar"], ["trends"], ["trends", "--days", "7"], ["records"],
-                     ["patterns"], ["suggest"]):
+    for command in (
+        ["calendar"],
+        ["trends"],
+        ["trends", "--days", "7"],
+        ["records"],
+        ["patterns"],
+        ["suggest"],
+    ):
         result = runner.invoke(cli.app, command)
         assert result.exit_code == 0, (command, result.output)
 
@@ -203,6 +209,32 @@ def test_private_command_marks_and_unmarks_entry(tmp_path, monkeypatch):
     result = runner.invoke(cli.app, ["private", today, "--unset"])
     assert result.exit_code == 0, result.output
     assert "no longer private" in result.output
+
+
+def test_edit_command_backfills_past_day_and_prints_date_banner(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write"], input="5\nn\n")  # first-run profile setup
+
+    past = (date.today() - timedelta(days=2)).isoformat()
+    result = runner.invoke(cli.app, ["edit", past])
+
+    assert result.exit_code == 0, result.output
+    assert f"Editing entry for {past}" in result.output
+    assert "Backfilled entry" in result.output
+
+
+def test_edit_command_rejects_editing_today(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write"], input="5\nn\n")
+
+    result = runner.invoke(cli.app, ["edit", date.today().isoformat()])
+
+    assert result.exit_code == 0, result.output
+    assert "Use `write`" in result.output
 
 
 def test_mcp_unlock_status_lock_flow(tmp_path, monkeypatch, fake_keyring):

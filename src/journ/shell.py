@@ -18,12 +18,19 @@ from journ.terminal import clear_screen
 # Grouped for the custom `help` overview -- deliberately excludes the do_journ/do_EOF
 # aliases, which exist for backward compatibility and Ctrl+D but would just be noise here.
 _HELP_GROUPS = [
-    ("Write", ["write", "private", "stats", "streak", "last", "goal"]),
+    ("Write", ["write", "edit", "private", "stats", "streak", "last", "goal"]),
     (
         "Analytics",
         [
-            "calendar", "trends", "records", "patterns", "suggest", "frequency",
-            "search", "on_this_day", "export",
+            "calendar",
+            "trends",
+            "records",
+            "patterns",
+            "suggest",
+            "frequency",
+            "search",
+            "on_this_day",
+            "export",
         ],
     ),
     ("Configuration", ["editor", "passphrase"]),
@@ -62,6 +69,29 @@ class JournalingShell(cmd.Cmd):
         self._run(lambda: actions.write_today_entry(self.db, private=private))
 
     do_journ = do_write  # backward-compatible alias for the old command name
+
+    def do_edit(self, line):
+        "Edit or backfill a past day's entry: 'edit 2026-07-01', 'edit 2026-07-01 private'"
+        parts = line.strip().split()
+        if not parts:
+            print("Usage: edit <date> [private|unprivate]")
+            return
+        try:
+            entry_date = date.fromisoformat(parts[0])
+        except ValueError:
+            print("Date must be in YYYY-MM-DD format.")
+            return
+        flag = parts[1].lower() if len(parts) > 1 else ""
+        if flag == "private":
+            private = True
+        elif flag == "unprivate":
+            private = False
+        elif flag == "":
+            private = None
+        else:
+            print("Usage: edit <date> [private|unprivate]")
+            return
+        self._run(lambda: actions.edit_entry(self.db, entry_date, private=private))
 
     def do_private(self, line):
         "Flag or unflag an entry as private: 'private 2026-07-01' or 'private 2026-07-01 unset'"

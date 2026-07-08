@@ -12,6 +12,7 @@ terminal on all three platforms does.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Static, TextArea
@@ -51,11 +52,18 @@ class JournEditorApp(App):
         ("ctrl+p", "toggle_private", "Toggle private"),
     ]
 
-    def __init__(self, initial_text: str, writing_goal: int, initial_private: bool = False):
+    def __init__(
+        self,
+        initial_text: str,
+        writing_goal: int,
+        initial_private: bool = False,
+        entry_date: date | None = None,
+    ):
         super().__init__()
         self.initial_text = initial_text
         self.writing_goal = writing_goal
         self.is_private = initial_private
+        self.entry_date = entry_date
         self.result: EditorResult | None = None
 
     def compose(self) -> ComposeResult:
@@ -82,7 +90,8 @@ class JournEditorApp(App):
     def _status_text(self, word_count: int) -> str:
         state = "goal met" if word_count >= self.writing_goal else "in progress"
         private_segment = " -- \U0001f512 PRIVATE (ctrl+p to toggle)" if self.is_private else ""
-        return f"{word_count} / {self.writing_goal} words -- {state}{private_segment}"
+        date_segment = f"Editing {self.entry_date.isoformat()} -- " if self.entry_date else ""
+        return f"{date_segment}{word_count} / {self.writing_goal} words -- {state}{private_segment}"
 
     def action_save(self) -> None:
         self.result = EditorResult(
@@ -102,9 +111,15 @@ class JournEditorApp(App):
 
 
 def run_builtin_editor(
-    initial_text: str, writing_goal: int, initial_private: bool = False
+    initial_text: str,
+    writing_goal: int,
+    initial_private: bool = False,
+    entry_date: date | None = None,
 ) -> EditorResult | None:
-    """Run the built-in editor and return the saved text/private state, or None if discarded."""
-    app = JournEditorApp(initial_text, writing_goal, initial_private)
+    """Run the built-in editor and return the saved text/private state, or None if discarded.
+    entry_date is shown in the status bar when set (used when editing a past day, so it's
+    never mistaken for today's entry); write_today_entry leaves it unset since "today" needs
+    no clarification."""
+    app = JournEditorApp(initial_text, writing_goal, initial_private, entry_date)
     app.run()
     return app.result

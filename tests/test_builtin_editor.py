@@ -1,3 +1,5 @@
+from datetime import date
+
 from journ.builtin_editor import JournEditorApp
 
 
@@ -53,6 +55,14 @@ def test_status_text_includes_private_indicator_only_when_private():
 
     app.is_private = True
     assert "PRIVATE" in app._status_text(5)
+
+
+def test_status_text_includes_entry_date_only_when_set():
+    app = JournEditorApp("existing text", writing_goal=100)
+    assert "Editing" not in app._status_text(5)
+
+    dated_app = JournEditorApp("existing text", writing_goal=100, entry_date=date(2026, 7, 1))
+    assert "Editing 2026-07-01" in dated_app._status_text(5)
 
 
 async def test_save_reflects_private_state_at_save_time():

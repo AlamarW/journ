@@ -8,7 +8,7 @@ commands still gets clean, parseable plain text.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from rich.console import Console
 from rich.panel import Panel
@@ -41,9 +41,7 @@ def print_welcome() -> None:
     # rectangle), so left-pad them to a common width before joining or the box columns
     # drift out of alignment row to row.
     pen_width = max(len(line) for line in _PEN)
-    lines = [
-        pen.ljust(pen_width) + "  " + box for pen, box in zip(_PEN, _BANNER_BOX, strict=True)
-    ]
+    lines = [pen.ljust(pen_width) + "  " + box for pen, box in zip(_PEN, _BANNER_BOX, strict=True)]
     lines[1] = lines[1].replace("journ", "[bold cyan]journ[/bold cyan]")
     lines[2] = lines[2].replace("a terminal journal", "[dim]a terminal journal[/dim]")
     console.print("\n".join(lines))
@@ -93,6 +91,43 @@ def print_write_summary(
                 f"{writing_goal}"
             )
     lines.append(f"Journalled for {format_elapsed(elapsed)}, {words_per_minute} words/minute")
+    if streak_changed:
+        lines.append(f"[bold cyan]Streak is now {streak} day(s)![/bold cyan]")
+    else:
+        lines.append(f"Current streak: {streak} day(s)")
+
+    for kind, threshold in milestones:
+        lines.append(_format_milestone(kind, threshold))
+
+    if private:
+        lines.append("[dim]Saved as a private entry.[/dim]")
+
+    console.print(Panel("\n".join(lines), title="journ", title_align="left", border_style="cyan"))
+
+
+def print_edit_summary(
+    *,
+    entry_date: date,
+    is_new_entry: bool,
+    word_count: int,
+    writing_goal: int,
+    goal_met: bool,
+    streak: int,
+    streak_changed: bool,
+    milestones: list[tuple[str, int]] = (),
+    private: bool = False,
+) -> None:
+    action = "Backfilled" if is_new_entry else "Edited"
+    lines = [f"{action} entry for {entry_date.isoformat()}"]
+    if goal_met:
+        lines.append(
+            f"[bold green]✓[/bold green] {word_count} words -- over your goal of {writing_goal}!"
+        )
+    else:
+        lines.append(
+            f"[bold yellow]○[/bold yellow] {word_count} words -- under your goal of {writing_goal}"
+        )
+
     if streak_changed:
         lines.append(f"[bold cyan]Streak is now {streak} day(s)![/bold cyan]")
     else:
@@ -180,8 +215,10 @@ def print_records(records: analytics.Records | None) -> None:
 
 def print_patterns(pattern: analytics.PatternSummary) -> None:
     if not any(pattern.by_day_of_week.values()):
-        console.print("Not enough data yet -- writing-pattern insights only cover entries "
-                       "written since this feature was added.")
+        console.print(
+            "Not enough data yet -- writing-pattern insights only cover entries "
+            "written since this feature was added."
+        )
         return
 
     console.print("[bold]Writing patterns[/bold]\n")
@@ -230,8 +267,12 @@ def print_on_this_day(entries: list[DecryptedEntry]) -> None:
         return
     for entry in sorted(entries, key=lambda e: e.entry_date):
         console.print(
-            Panel(entry.text, title=entry.entry_date.isoformat(), title_align="left",
-                  border_style="cyan")
+            Panel(
+                entry.text,
+                title=entry.entry_date.isoformat(),
+                title_align="left",
+                border_style="cyan",
+            )
         )
 
 
