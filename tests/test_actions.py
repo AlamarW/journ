@@ -455,6 +455,143 @@ def test_export_journal_all_private_prints_message_without_writing(db, tmp_path,
     assert "--include-private" in capsys.readouterr().out
 
 
+def test_get_calendar_data_excludes_private_entries(db):
+    db.create_profile(writing_goal=1)
+    today = date(2026, 7, 8)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=10,
+            private=True,
+        )
+    )
+    grid, _score = actions.get_calendar_data(db, weeks=1, today=today)
+    matching = [day for week in grid for day in week if day.day == today]
+    assert matching[0].wrote is False
+    assert matching[0].word_count is None
+
+
+def test_get_trends_data_excludes_private_entries(db):
+    db.create_profile(writing_goal=1)
+    today = date(2026, 7, 8)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=10,
+            private=True,
+        )
+    )
+    points = actions.get_trends_data(db, days=1, today=today)
+    assert points[0].word_count == 0
+    assert points[0].goal_met is False
+
+
+def test_get_records_data_excludes_private_entries(db):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=500,
+            private=True,
+        )
+    )
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 2), content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=10,
+        )
+    )
+    records = actions.get_records_data(db)
+    assert records.longest_entry_words == 10
+    assert records.longest_entry_date == date(2026, 7, 2)
+
+
+def test_get_patterns_data_excludes_private_entries(db):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x",
+            started_at=datetime(2026, 7, 1, 9, 0).isoformat(), private=True,
+        )
+    )
+    summary = actions.get_patterns_data(db)
+    assert sum(summary.by_day_of_week.values()) == 0
+    assert sum(summary.by_time_of_day.values()) == 0
+
+
+def test_get_goal_suggestion_excludes_private_entries(db):
+    db.create_profile(writing_goal=100)
+    today = date(2026, 7, 8)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=today, content=b"x", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=1000,
+            private=True,
+        )
+    )
+    current, suggestion = actions.get_goal_suggestion(db, today=today)
+    assert current == 100
+    assert suggestion is None
+
+
+def test_get_word_frequency_excludes_private_entries_by_default(db):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"secretword secretword secretword",
+            is_encrypted=False, words_per_minute=None, accomplished_goal=True,
+            updated_at="x", word_count=3, private=True,
+        )
+    )
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 2), content=b"publicword",
+            is_encrypted=False, words_per_minute=None, accomplished_goal=True,
+            updated_at="x", word_count=1,
+        )
+    )
+    profile = db.get_profile()
+
+    freq_words = [word for word, _count in actions.get_word_frequency(db, profile, key=None)]
+
+    assert "secretword" not in freq_words
+    assert "publicword" in freq_words
+
+
+def test_get_search_results_excludes_private_entries_by_default(db):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"a secret confession here",
+            is_encrypted=False, words_per_minute=None, accomplished_goal=True,
+            updated_at="x", word_count=4, private=True,
+        )
+    )
+    profile = db.get_profile()
+
+    results = actions.get_search_results(db, profile, key=None, query="secret")
+
+    assert results == []
+
+
+def test_get_on_this_day_excludes_private_entries_by_default(db):
+    db.create_profile(writing_goal=1)
+    today = date(2026, 7, 8)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2020, 7, 8), content=b"private memory", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=2,
+            private=True,
+        )
+    )
+    profile = db.get_profile()
+
+    results = actions.get_on_this_day(db, profile, key=None, today=today)
+
+    assert results == []
+
+
 def test_save_conversation_entry_creates_new_entry_counts_only_user_words(db):
     db.create_profile(writing_goal=1)
     turns = [

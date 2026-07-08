@@ -47,8 +47,7 @@ def ensure_profile(db: Database) -> tuple[Profile, bytes | None]:
     kdf_salt = canary = key = None
     wants_passphrase = (
         input(
-            "Set a passphrase to encrypt your entries? Recommended for personal "
-            "journals. (y/N) -> "
+            "Set a passphrase to encrypt your entries? Recommended for personal journals. (y/N) -> "
         )
         .strip()
         .lower()
@@ -194,8 +193,7 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
         except FileNotFoundError:
             scratch_path.unlink(missing_ok=True)
             print(
-                f"Could not launch editor '{editor}'. Set EDITOR to a valid command and "
-                "try again."
+                f"Could not launch editor '{editor}'. Set EDITOR to a valid command and try again."
             )
             return
         text = scratch_path.read_text(encoding="utf-8")
@@ -325,9 +323,7 @@ def save_conversation_entry(
         word_count = existing_word_count + new_user_words
 
         transcript_text = _format_transcript(turns)
-        full_text = (
-            f"{existing_text}\n\n{transcript_text}" if existing_text else transcript_text
-        )
+        full_text = f"{existing_text}\n\n{transcript_text}" if existing_text else transcript_text
 
         goal_met = word_count >= profile.writing_goal
         wpm = existing.words_per_minute if existing else None
@@ -338,9 +334,7 @@ def save_conversation_entry(
             is_private = private
 
         started_at = (
-            existing.started_at
-            if existing and existing.started_at
-            else datetime.now().isoformat()
+            existing.started_at if existing and existing.started_at else datetime.now().isoformat()
         )
 
         words_before, entries_before = db.aggregate_totals()
@@ -573,7 +567,7 @@ class StatsTotals:
 def get_calendar_data(
     db: Database, weeks: int = 12, today: date | None = None
 ) -> tuple[list[list[analytics.CalendarDay]], float]:
-    entries = db.all_entries()
+    entries = filter_private(db.all_entries(), include_private=False)
     grid = analytics.build_calendar(entries, weeks=weeks, today=today)
     score = analytics.consistency_score(entries, today=today)
     return grid, score
@@ -588,7 +582,9 @@ def show_calendar(db: Database) -> None:
 def get_trends_data(
     db: Database, days: int, today: date | None = None
 ) -> list[analytics.TrendPoint]:
-    return analytics.trend_series(db.all_entries(), days=days, today=today)
+    return analytics.trend_series(
+        filter_private(db.all_entries(), include_private=False), days=days, today=today
+    )
 
 
 def show_trends(db: Database, days: int) -> None:
@@ -600,7 +596,9 @@ def get_records_data(db: Database) -> analytics.Records | None:
     profile = db.get_profile()
     if profile is None:
         return None
-    return analytics.personal_records(db.all_entries(), profile)
+    return analytics.personal_records(
+        filter_private(db.all_entries(), include_private=False), profile
+    )
 
 
 def show_records(db: Database) -> None:
@@ -609,7 +607,7 @@ def show_records(db: Database) -> None:
 
 
 def get_patterns_data(db: Database) -> analytics.PatternSummary:
-    return analytics.writing_pattern(db.all_entries())
+    return analytics.writing_pattern(filter_private(db.all_entries(), include_private=False))
 
 
 def show_patterns(db: Database) -> None:
@@ -625,7 +623,10 @@ def get_goal_suggestion(
     if profile is None:
         return None, None
     suggestion = analytics.suggest_goal(
-        db.all_entries(), profile.writing_goal, days=days, today=today
+        filter_private(db.all_entries(), include_private=False),
+        profile.writing_goal,
+        days=days,
+        today=today,
     )
     return profile.writing_goal, suggestion
 
@@ -670,6 +671,8 @@ def get_word_frequency(
     entries: list[JournalEntry] | None = None,
     top_n: int = 20,
 ) -> list[tuple[str, int]]:
+    if entries is None:
+        entries = filter_private(db.all_entries(), include_private=False)
     decrypted = all_decrypted(db, profile, key, entries=entries)
     return content.word_frequency([e.text for e in decrypted], top_n=top_n)
 
@@ -690,6 +693,8 @@ def get_search_results(
     query: str,
     entries: list[JournalEntry] | None = None,
 ) -> list[tuple[date, str]]:
+    if entries is None:
+        entries = filter_private(db.all_entries(), include_private=False)
     decrypted = all_decrypted(db, profile, key, entries=entries)
     return content.search_matches(decrypted, query)
 
@@ -720,7 +725,9 @@ def get_on_this_day(
     entries: list[JournalEntry] | None = None,
 ) -> list[DecryptedEntry]:
     if entries is None:
-        entries = on_this_day_matches(db.all_entries(), today=today)
+        entries = on_this_day_matches(
+            filter_private(db.all_entries(), include_private=False), today=today
+        )
     return all_decrypted(db, profile, key, entries=entries)
 
 
