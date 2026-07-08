@@ -846,6 +846,39 @@ def test_save_conversation_entry_merges_with_existing_editor_entry_additive_word
     assert entry.words_per_minute == 42.0  # untouched, never recomputed/nulled
 
 
+def test_save_conversation_entry_retry_does_not_double_count_words(db):
+    db.create_profile(writing_goal=1)
+    today = date.today()
+    turns = [
+        actions.ConversationTurn(role="user", text="five user words here today"),
+        actions.ConversationTurn(role="assistant", text="an assistant reply"),
+    ]
+
+    first = actions.save_conversation_entry(db, today, turns, key=None)
+    retried = actions.save_conversation_entry(db, today, turns, key=None)
+
+    assert first.word_count == 5
+    assert retried.word_count == 5
+    entry = db.get_entry(today)
+    assert entry.word_count == 5
+    assert entry.content.decode("utf-8").count("You:") == 1
+
+
+def test_save_conversation_entry_non_retry_second_call_still_appends_and_counts(db):
+    db.create_profile(writing_goal=1)
+    today = date.today()
+    first_turns = [actions.ConversationTurn(role="user", text="five user words here today")]
+    second_turns = [actions.ConversationTurn(role="user", text="three more words")]
+
+    actions.save_conversation_entry(db, today, first_turns, key=None)
+    result = actions.save_conversation_entry(db, today, second_turns, key=None)
+
+    assert result.word_count == 8
+    entry = db.get_entry(today)
+    assert entry.word_count == 8
+    assert entry.content.decode("utf-8").count("You:") == 2
+
+
 def test_save_conversation_entry_backfills_null_word_count_before_merging(db):
     db.create_profile(writing_goal=1)
     today = date.today()

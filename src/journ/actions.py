@@ -319,6 +319,13 @@ def save_conversation_entry(
     private=None preserves whatever the entry's current private flag is (False for a new
     entry) rather than defaulting to False -- an explicit bool always overrides.
 
+    If this exact transcript is already the tail of the stored entry -- i.e. an MCP client
+    retried the same tool call after e.g. a timeout -- the text isn't appended again and the
+    words aren't double-counted. This is a pragmatic exact-suffix heuristic, not a real
+    idempotency key, since there's no request-id tracking; a second call with a genuinely
+    identical transcript would also be treated as a retry, but that's an acceptable trade-off
+    for a journal.
+
     When entry_date is today, streak/longest-streak update incrementally via
     streak.update_streak, same as write_today_entry. A backdated entry_date instead
     reconciles the whole streak from scratch (streak.recompute_streak), since
@@ -343,10 +350,17 @@ def save_conversation_entry(
 
         user_text = "\n\n".join(t.text for t in turns if t.role == "user")
         new_user_words = count_words(user_text)
-        word_count = existing_word_count + new_user_words
 
         transcript_text = _format_transcript(turns)
-        full_text = f"{existing_text}\n\n{transcript_text}" if existing_text else transcript_text
+        is_retry = bool(transcript_text) and existing_text.endswith(transcript_text)
+        if is_retry:
+            full_text = existing_text
+            word_count = existing_word_count
+        else:
+            full_text = (
+                f"{existing_text}\n\n{transcript_text}" if existing_text else transcript_text
+            )
+            word_count = existing_word_count + new_user_words
 
         goal_met = word_count >= profile.writing_goal
         wpm = existing.words_per_minute if existing else None
