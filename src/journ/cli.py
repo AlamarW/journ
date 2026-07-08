@@ -65,10 +65,23 @@ def shell() -> None:
 
 
 @app.command()
-def write() -> None:
+def write(
+    private: bool = typer.Option(
+        False,
+        "--private",
+        help="Mark today's entry private (initial state for the built-in editor).",
+    ),
+    unprivate: bool = typer.Option(
+        False, "--unprivate", help="Clear today's entry's private flag."
+    ),
+) -> None:
     """Write today's journal entry in your text editor."""
+    if private and unprivate:
+        typer.echo("--private and --unprivate can't both be set.")
+        raise typer.Exit(code=1)
+    resolved_private = True if private else (False if unprivate else None)
     with _open_db() as db:
-        _run(lambda: actions.write_today_entry(db))
+        _run(lambda: actions.write_today_entry(db, private=resolved_private))
 
 
 @app.command()

@@ -1,6 +1,7 @@
 from datetime import date
 
 from journ import actions, config, crypto
+from journ.builtin_editor import EditorResult
 from journ.models import JournalEntry
 from journ.words import count_words
 
@@ -12,7 +13,11 @@ def test_builtin_editor_never_touches_tmp_dir_and_skips_redundant_goal_line(
     monkeypatch.setattr(config, "journ_tmp_dir", tmp_path / "tmp")
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
     monkeypatch.setattr(
-        actions, "run_builtin_editor", lambda initial_text, writing_goal: "written via builtin"
+        actions,
+        "run_builtin_editor",
+        lambda initial_text, writing_goal, initial_private=False: EditorResult(
+            text="written via builtin", private=initial_private
+        ),
     )
 
     actions.write_today_entry(db)
@@ -48,7 +53,11 @@ def test_external_editor_still_prints_goal_line(db, tmp_path, monkeypatch, capsy
 
 def test_write_persists_word_count_and_started_at(db, monkeypatch):
     db.create_profile(writing_goal=1)
-    monkeypatch.setattr(actions, "run_builtin_editor", lambda text, goal: "five whole words here")
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text="five whole words here", private=priv),
+    )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
     actions.write_today_entry(db)
@@ -67,7 +76,11 @@ def test_milestone_line_appears_when_threshold_crossed(db, monkeypatch, capsys):
             words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=950,
         )
     )
-    monkeypatch.setattr(actions, "run_builtin_editor", lambda text, goal: "word " * 60)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text="word " * 60, private=priv),
+    )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
     actions.write_today_entry(db)
@@ -85,7 +98,11 @@ def test_milestone_does_not_reappear_on_unrelated_write(db, monkeypatch, capsys)
             words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=2_000,
         )
     )
-    monkeypatch.setattr(actions, "run_builtin_editor", lambda text, goal: "a few more words")
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text="a few more words", private=priv),
+    )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
     actions.write_today_entry(db)
@@ -99,6 +116,62 @@ def _forbid_unlock(monkeypatch):
         raise AssertionError("unlock() should not be called for metadata-only actions")
 
     monkeypatch.setattr(actions, "unlock", _fail)
+
+
+def test_write_today_entry_defaults_to_not_private(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text="some words", private=priv),
+    )
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+
+    actions.write_today_entry(db)
+
+    assert db.get_entry(date.today()).private is False
+
+
+def test_write_today_entry_preserves_existing_private_flag_by_default(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date.today(), content=b"secret so far", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x", word_count=2,
+            private=True,
+        )
+    )
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text=text + " more", private=priv),
+    )
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+
+    actions.write_today_entry(db)  # private=None -- should preserve, not reset to False
+
+    assert db.get_entry(date.today()).private is True
+
+
+def test_write_today_entry_explicit_private_overrides_existing_flag(db, monkeypatch):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date.today(), content=b"secret so far", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x", word_count=2,
+            private=True,
+        )
+    )
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text=text + " more", private=priv),
+    )
+    monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
+
+    actions.write_today_entry(db, private=False)
+
+    assert db.get_entry(date.today()).private is False
 
 
 def test_metadata_only_actions_never_prompt_for_passphrase(db, monkeypatch, capsys):
@@ -400,7 +473,11 @@ def test_save_conversation_entry_and_write_today_entry_do_not_clobber_each_other
     actions.save_conversation_entry(db, today, turns, key=None)
     assert db.get_entry(today).word_count == 5
 
-    monkeypatch.setattr(actions, "run_builtin_editor", lambda text, goal: text + " typed more")
+    monkeypatch.setattr(
+        actions,
+        "run_builtin_editor",
+        lambda text, goal, priv=False: EditorResult(text=text + " typed more", private=priv),
+    )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
     actions.write_today_entry(db)
 

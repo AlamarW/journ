@@ -76,6 +76,7 @@ def print_write_summary(
     streak_changed: bool,
     skip_goal_line: bool = False,
     milestones: list[tuple[str, int]] = (),
+    private: bool = False,
 ) -> None:
     from journ.words import format_elapsed
 
@@ -99,6 +100,9 @@ def print_write_summary(
 
     for kind, threshold in milestones:
         lines.append(_format_milestone(kind, threshold))
+
+    if private:
+        lines.append("[dim]Saved as a private entry.[/dim]")
 
     console.print(Panel("\n".join(lines), title="journ", title_align="left", border_style="cyan"))
 

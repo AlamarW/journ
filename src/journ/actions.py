@@ -144,7 +144,12 @@ def filter_private(entries: list[JournalEntry], include_private: bool) -> list[J
     return [e for e in entries if not e.private]
 
 
-def write_today_entry(db: Database) -> None:
+def write_today_entry(db: Database, private: bool | None = None) -> None:
+    """private=None preserves today's existing entry's current private flag if editing one
+    (False for a new entry) -- an explicit bool always overrides. For the built-in editor this
+    is only the *initial* toggle state, since ctrl+p can change it during the session; for an
+    external $EDITOR there's no interactive UI to toggle it mid-session, so this is the only
+    control."""
     profile, key = ensure_profile(db)
     if key is None:
         key = unlock(profile)
@@ -152,6 +157,9 @@ def write_today_entry(db: Database) -> None:
     today = date.today()
     existing = db.get_entry(today)
     existing_text = _decode_entry(db, existing, key) if existing else ""
+    initial_private = existing.private if existing else False
+    if private is not None:
+        initial_private = private
 
     editor = config.get_editor()
     used_builtin = editor == config.BUILTIN_EDITOR
@@ -160,11 +168,14 @@ def write_today_entry(db: Database) -> None:
     if used_builtin:
         # Held in memory only -- unlike the external-editor path below, this never writes
         # plaintext to disk.
-        text = run_builtin_editor(existing_text, profile.writing_goal)
-        if text is None:
+        result = run_builtin_editor(existing_text, profile.writing_goal, initial_private)
+        if result is None:
             print("Discarded -- no changes saved.")
             return
+        text = result.text
+        is_private = result.private
     else:
+        is_private = initial_private
         config.journ_tmp_dir.mkdir(parents=True, exist_ok=True)
         scratch_path = config.journ_tmp_dir / f"{today.isoformat()}.txt"
 
@@ -211,6 +222,7 @@ def write_today_entry(db: Database) -> None:
                 updated_at=datetime.now().isoformat(),
                 word_count=word_count,
                 started_at=start_time.isoformat(),
+                private=is_private,
             )
         )
 
@@ -242,6 +254,7 @@ def write_today_entry(db: Database) -> None:
         streak_changed=(new_streak != profile.streak),
         skip_goal_line=used_builtin,
         milestones=milestones,
+        private=is_private,
     )
 
 

@@ -149,6 +149,25 @@ def test_export_rejects_unknown_format(tmp_path, monkeypatch):
     assert not (tmp_path / "out.txt").exists()
 
 
+def test_write_private_flag_marks_new_entry_private(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+
+    result = runner.invoke(cli.app, ["write", "--private"], input="5\nn\n")
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(cli.app, ["private", date.today().isoformat(), "--unset"])
+    assert "no longer private" in result.output  # confirms it *was* private beforehand
+
+
+def test_write_rejects_both_private_and_unprivate(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    result = runner.invoke(cli.app, ["write", "--private", "--unprivate"])
+    assert result.exit_code == 1
+    assert "can't both be set" in result.output
+
+
 def test_private_command_marks_and_unmarks_entry(tmp_path, monkeypatch):
     global STUB_EDITOR
     STUB_EDITOR = _write_stub_editor(tmp_path)
