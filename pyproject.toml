@@ -1,0 +1,42 @@
+[project]
+name = "journ-app"
+version = "2.0.0"
+description = "A CLI journaling tool that honors your text editor of choice"
+readme = "README.md"
+authors = [{ name = "Austin Wiggins", email = "Austinlamarwiggins@gmail.com" }]
+requires-python = ">=3.9"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "cryptography>=42",
+    "pyreadline3; platform_system == 'Windows'",
+]
+
+[project.urls]
+Homepage = "https://github.com/AlamarW/journ"
+
+[project.scripts]
+journ = "journ.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/journ"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
