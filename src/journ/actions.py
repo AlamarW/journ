@@ -4,6 +4,7 @@ so each behavior has exactly one implementation.
 
 from __future__ import annotations
 
+import calendar
 import getpass
 import os
 import subprocess
@@ -729,13 +730,18 @@ def search_journal(db: Database, query: str) -> None:
 def on_this_day_matches(
     entries: list[JournalEntry], today: date | None = None
 ) -> list[JournalEntry]:
+    """Feb 29 entries are shown on Feb 28 in years that don't have a Feb 29 to match
+    against -- otherwise a leap-day entry would only resurface once every 4 years."""
     today = today or date.today()
+    include_leap_day = today.month == 2 and today.day == 28 and not calendar.isleap(today.year)
     return [
         e
         for e in entries
-        if e.entry_date.month == today.month
-        and e.entry_date.day == today.day
-        and e.entry_date.year != today.year
+        if e.entry_date.year != today.year
+        and (
+            (e.entry_date.month == today.month and e.entry_date.day == today.day)
+            or (include_leap_day and e.entry_date.month == 2 and e.entry_date.day == 29)
+        )
     ]
 
 

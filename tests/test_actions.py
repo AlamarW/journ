@@ -756,6 +756,51 @@ def test_get_on_this_day_excludes_private_entries_by_default(db):
     assert results == []
 
 
+def _bare_entry(entry_date: date) -> JournalEntry:
+    return JournalEntry(
+        entry_date=entry_date,
+        content=b"x",
+        is_encrypted=False,
+        words_per_minute=None,
+        accomplished_goal=False,
+        updated_at="x",
+    )
+
+
+def test_on_this_day_matches_feb29_entry_surfaces_on_feb28_in_non_leap_year():
+    entries = [_bare_entry(date(2024, 2, 29))]  # 2024 is a leap year
+
+    matches = actions.on_this_day_matches(entries, today=date(2026, 2, 28))  # 2026 is not
+
+    assert matches == entries
+
+
+def test_on_this_day_matches_feb28_in_leap_year_does_not_absorb_feb29_entries():
+    entries = [_bare_entry(date(2024, 2, 29))]
+
+    matches = actions.on_this_day_matches(entries, today=date(2028, 2, 28))  # 2028 is leap
+
+    assert matches == []
+
+
+def test_on_this_day_matches_feb29_today_matches_other_leap_years_feb29():
+    entries = [_bare_entry(date(2024, 2, 29))]
+
+    matches = actions.on_this_day_matches(entries, today=date(2028, 2, 29))
+
+    assert matches == entries
+
+
+def test_on_this_day_matches_excludes_same_year_and_mismatched_day():
+    same_year = _bare_entry(date(2026, 7, 8))
+    mismatched_day = _bare_entry(date(2020, 7, 9))
+    entries = [same_year, mismatched_day]
+
+    matches = actions.on_this_day_matches(entries, today=date(2026, 7, 8))
+
+    assert matches == []
+
+
 def test_save_conversation_entry_creates_new_entry_counts_only_user_words(db):
     db.create_profile(writing_goal=1)
     turns = [
