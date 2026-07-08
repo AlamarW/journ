@@ -7,7 +7,7 @@ from __future__ import annotations
 import getpass
 import os
 import subprocess
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
@@ -112,8 +112,14 @@ def _encode_entry(text: str, key: bytes | None) -> tuple[bytes, bool]:
     return text.encode("utf-8"), False
 
 
-def _all_decrypted(db: Database, profile: Profile, key: bytes | None) -> list[DecryptedEntry]:
-    entries = db.all_entries()
+def all_decrypted(
+    db: Database, profile: Profile, key: bytes | None, entries: list[JournalEntry] | None = None
+) -> list[DecryptedEntry]:
+    """Decrypts entries into DecryptedEntry text. Defaults to every entry in the journal, but
+    accepts a pre-filtered subset (see filter_private) so callers can exclude entries from
+    decryption entirely rather than decrypting everything and filtering the result."""
+    if entries is None:
+        entries = db.all_entries()
     if not entries:
         return []
     if key is None:
@@ -128,6 +134,14 @@ def _all_decrypted(db: Database, profile: Profile, key: bytes | None) -> list[De
         )
         for entry in entries
     ]
+
+
+def filter_private(entries: list[JournalEntry], include_private: bool) -> list[JournalEntry]:
+    """Excludes private entries unless include_private=True. Pure and DB/crypto-free so
+    Tier-3 gating can be tested without touching the database."""
+    if include_private:
+        return entries
+    return [e for e in entries if not e.private]
 
 
 def write_today_entry(db: Database) -> None:
@@ -352,90 +366,207 @@ def _reencrypt_all(
 
 
 # --- metadata-only analytics (no passphrase needed once word_count/started_at are backfilled) ---
+#
+# Each of these is split into a get_* data function (pure over db.all_entries()/get_profile(),
+# safe to call from an MCP tool with no key at all) and a thin show_*/action print wrapper used
+# by the CLI/shell. The get_* functions deliberately call db.get_profile() directly rather than
+# ensure_profile(db), since ensure_profile can trigger an interactive first-run input() prompt
+# that must never be reachable from a non-interactive MCP tool call.
+
+
+@dataclass
+class StatsTotals:
+    total_words: int
+    entry_count: int
+    avg_words_per_minute: float
+
+
+def get_calendar_data(
+    db: Database, weeks: int = 12, today: date | None = None
+) -> tuple[list[list[analytics.CalendarDay]], float]:
+    entries = db.all_entries()
+    grid = analytics.build_calendar(entries, weeks=weeks, today=today)
+    score = analytics.consistency_score(entries, today=today)
+    return grid, score
 
 
 def show_calendar(db: Database) -> None:
-    _profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    grid = analytics.build_calendar(entries)
-    score = analytics.consistency_score(entries)
+    ensure_profile(db)
+    grid, score = get_calendar_data(db)
     ui.print_calendar(grid, consistency=score)
 
 
+def get_trends_data(
+    db: Database, days: int, today: date | None = None
+) -> list[analytics.TrendPoint]:
+    return analytics.trend_series(db.all_entries(), days=days, today=today)
+
+
 def show_trends(db: Database, days: int) -> None:
-    _profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    points = analytics.trend_series(entries, days=days)
-    ui.print_trends(points)
+    ensure_profile(db)
+    ui.print_trends(get_trends_data(db, days))
+
+
+def get_records_data(db: Database) -> analytics.Records | None:
+    profile = db.get_profile()
+    if profile is None:
+        return None
+    return analytics.personal_records(db.all_entries(), profile)
 
 
 def show_records(db: Database) -> None:
-    profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    records = analytics.personal_records(entries, profile)
-    ui.print_records(records)
+    ensure_profile(db)
+    ui.print_records(get_records_data(db))
+
+
+def get_patterns_data(db: Database) -> analytics.PatternSummary:
+    return analytics.writing_pattern(db.all_entries())
 
 
 def show_patterns(db: Database) -> None:
-    _profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    pattern = analytics.writing_pattern(entries)
-    ui.print_patterns(pattern)
+    ensure_profile(db)
+    ui.print_patterns(get_patterns_data(db))
+
+
+def get_goal_suggestion(
+    db: Database, days: int = 30, today: date | None = None
+) -> tuple[int | None, int | None]:
+    """Returns (current_goal, suggested_or_None); both None if no profile exists yet."""
+    profile = db.get_profile()
+    if profile is None:
+        return None, None
+    suggestion = analytics.suggest_goal(
+        db.all_entries(), profile.writing_goal, days=days, today=today
+    )
+    return profile.writing_goal, suggestion
 
 
 def suggest_goal_action(db: Database) -> None:
-    profile, _key = ensure_profile(db)
-    entries = db.all_entries()
-    suggestion = analytics.suggest_goal(entries, profile.writing_goal)
-    ui.print_goal_suggestion(current_goal=profile.writing_goal, suggested=suggestion)
+    ensure_profile(db)
+    current, suggestion = get_goal_suggestion(db)
+    ui.print_goal_suggestion(current_goal=current, suggested=suggestion)
+
+
+def get_streak_data(db: Database) -> tuple[int, int]:
+    """Returns (streak, longest_streak); (0, 0) if no profile exists yet."""
+    profile = db.get_profile()
+    if profile is None:
+        return 0, 0
+    return profile.streak, profile.longest_streak
+
+
+def get_current_goal(db: Database) -> int | None:
+    profile = db.get_profile()
+    return profile.writing_goal if profile else None
+
+
+def get_stats_totals(db: Database) -> StatsTotals:
+    """Zero-decryption stats: unlike show_stats, this never lazily unlocks to backfill
+    word_count on legacy entries -- it only reads what's already in the DB."""
+    total_words, entry_count = db.aggregate_totals()
+    wpm_values = [e.words_per_minute for e in db.all_entries() if e.words_per_minute]
+    avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
+    return StatsTotals(
+        total_words=total_words, entry_count=entry_count, avg_words_per_minute=avg_wpm
+    )
 
 
 # --- content-based features (need to decrypt entry text) ---
 
 
+def get_word_frequency(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    entries: list[JournalEntry] | None = None,
+    top_n: int = 20,
+) -> list[tuple[str, int]]:
+    decrypted = all_decrypted(db, profile, key, entries=entries)
+    return content.word_frequency([e.text for e in decrypted], top_n=top_n)
+
+
 def show_word_frequency(db: Database) -> None:
     profile, key = ensure_profile(db)
-    decrypted = _all_decrypted(db, profile, key)
-    if not decrypted:
+    freq = get_word_frequency(db, profile, key)
+    if not freq:
         print("You haven't written anything yet.")
         return
-    freq = content.word_frequency([e.text for e in decrypted])
     ui.print_word_frequency(freq)
+
+
+def get_search_results(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    query: str,
+    entries: list[JournalEntry] | None = None,
+) -> list[tuple[date, str]]:
+    decrypted = all_decrypted(db, profile, key, entries=entries)
+    return content.search_matches(decrypted, query)
 
 
 def search_journal(db: Database, query: str) -> None:
     profile, key = ensure_profile(db)
-    decrypted = _all_decrypted(db, profile, key)
-    results = content.search_matches(decrypted, query)
-    ui.print_search_results(query, results)
+    ui.print_search_results(query, get_search_results(db, profile, key, query))
 
 
-def show_on_this_day(db: Database) -> None:
-    profile, key = ensure_profile(db)
-    today = date.today()
-    matches = [
+def _on_this_day_matches(
+    entries: list[JournalEntry], today: date | None = None
+) -> list[JournalEntry]:
+    today = today or date.today()
+    return [
         e
-        for e in db.all_entries()
+        for e in entries
         if e.entry_date.month == today.month
         and e.entry_date.day == today.day
         and e.entry_date.year != today.year
     ]
-    if not matches:
-        print("No entries from this day in previous years yet.")
+
+
+def get_on_this_day(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    today: date | None = None,
+    entries: list[JournalEntry] | None = None,
+) -> list[DecryptedEntry]:
+    if entries is None:
+        entries = _on_this_day_matches(db.all_entries(), today=today)
+    return all_decrypted(db, profile, key, entries=entries)
+
+
+def show_on_this_day(db: Database) -> None:
+    profile, key = ensure_profile(db)
+    ui.print_on_this_day(get_on_this_day(db, profile, key))
+
+
+def get_entry_by_date(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    entry_date: date,
+    include_private: bool = False,
+) -> DecryptedEntry | None:
+    """Single-entry read. Checks entry.private *before* decrypting, so a private entry
+    queried without Tier-3 access never triggers unlock() at all -- preserve this ordering
+    under any future refactor, it's a real privacy guarantee, not just style."""
+    entry = db.get_entry(entry_date)
+    if entry is None:
+        return None
+    if entry.private and not include_private:
+        return None
+    decrypted = all_decrypted(db, profile, key, entries=[entry])
+    return decrypted[0] if decrypted else None
+
+
+def set_private(db: Database, entry_date: date, private: bool) -> None:
+    entry = db.get_entry(entry_date)
+    if entry is None:
+        print(f"No entry found for {entry_date.isoformat()}.")
         return
-    if key is None:
-        key = unlock(profile)
-    decrypted = [
-        DecryptedEntry(
-            entry_date=entry.entry_date,
-            text=(text := _decode_entry(db, entry, key)),
-            word_count=entry.word_count if entry.word_count is not None else count_words(text),
-            words_per_minute=entry.words_per_minute,
-            accomplished_goal=entry.accomplished_goal,
-        )
-        for entry in matches
-    ]
-    ui.print_on_this_day(decrypted)
+    db.set_private(entry_date, private)
+    state = "private" if private else "no longer private"
+    print(f"Entry for {entry_date.isoformat()} is now {state}.")
 
 
 def export_journal(db: Database, output_path: Path, export_format: str) -> None:
@@ -462,7 +593,7 @@ def export_journal(db: Database, output_path: Path, export_format: str) -> None:
             print("Export cancelled.")
             return
 
-    decrypted = _all_decrypted(db, profile, key)
+    decrypted = all_decrypted(db, profile, key)
     if export_format == "md":
         text = content.format_markdown(decrypted)
     else:
