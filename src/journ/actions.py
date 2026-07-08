@@ -443,8 +443,7 @@ def show_stats(db: Database) -> None:
             _decode_entry(db, entry, key)
 
     total_words, entry_count = db.aggregate_totals()
-    wpm_values = [e.words_per_minute for e in entries if e.words_per_minute]
-    avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
+    avg_wpm = _average_wpm(entries)
     ui.print_stats_table(avg_wpm=avg_wpm, total_words=total_words, entry_count=entry_count)
 
 
@@ -673,12 +672,16 @@ def get_current_goal(db: Database) -> int | None:
     return profile.writing_goal if profile else None
 
 
+def _average_wpm(entries: list[JournalEntry]) -> float:
+    wpm_values = [e.words_per_minute for e in entries if e.words_per_minute]
+    return round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
+
+
 def get_stats_totals(db: Database) -> StatsTotals:
     """Zero-decryption stats: unlike show_stats, this never lazily unlocks to backfill
     word_count on legacy entries -- it only reads what's already in the DB."""
     total_words, entry_count = db.aggregate_totals()
-    wpm_values = [e.words_per_minute for e in db.all_entries() if e.words_per_minute]
-    avg_wpm = round(sum(wpm_values) / len(wpm_values), 2) if wpm_values else 0.0
+    avg_wpm = _average_wpm(db.all_entries())
     return StatsTotals(
         total_words=total_words, entry_count=entry_count, avg_words_per_minute=avg_wpm
     )
