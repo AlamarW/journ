@@ -11,8 +11,12 @@ terminal on all three platforms does.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date
+
+if os.name == "nt":
+    import msvcrt
 
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Static, TextArea
@@ -110,6 +114,19 @@ class JournEditorApp(App):
         status.update(self._status_text(count_words(text_area.text)))
 
 
+def _drain_pending_console_input() -> None:
+    """Windows-only: Textual's raw-mode console session can leave a stray event (e.g. a
+    key-up record for the Ctrl+S used to save) sitting in the console's input buffer once it
+    exits. If it's not drained here, pyreadline3 -- which the (journ) shell prompt uses for
+    readline-style editing on Windows -- picks it up on the next input() call and
+    misinterprets it as its own forward-i-search binding, dropping the user into an i-search
+    prompt instead of the next (journ) prompt."""
+    if os.name != "nt":
+        return
+    while msvcrt.kbhit():
+        msvcrt.getch()
+
+
 def run_builtin_editor(
     initial_text: str,
     writing_goal: int,
@@ -122,4 +139,5 @@ def run_builtin_editor(
     no clarification."""
     app = JournEditorApp(initial_text, writing_goal, initial_private, entry_date)
     app.run()
+    _drain_pending_console_input()
     return app.result

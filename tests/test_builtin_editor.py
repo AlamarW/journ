@@ -1,5 +1,6 @@
 from datetime import date
 
+from journ import builtin_editor
 from journ.builtin_editor import JournEditorApp
 
 
@@ -86,3 +87,40 @@ async def test_initial_private_true_carries_through_to_save():
         await pilot.pause()
 
     assert app.result.private is True
+
+
+def test_drain_pending_console_input_consumes_buffered_keystrokes(monkeypatch):
+    calls = {"getch": 0}
+
+    class _FakeMsvcrt:
+        def __init__(self):
+            self._pending = 3
+
+        def kbhit(self):
+            return self._pending > 0
+
+        def getch(self):
+            calls["getch"] += 1
+            self._pending -= 1
+            return b"\x13"
+
+    monkeypatch.setattr(builtin_editor, "msvcrt", _FakeMsvcrt(), raising=False)
+    monkeypatch.setattr(builtin_editor.os, "name", "nt")
+
+    builtin_editor._drain_pending_console_input()
+
+    assert calls["getch"] == 3
+
+
+def test_drain_pending_console_input_is_a_noop_off_windows(monkeypatch):
+    class _FakeMsvcrt:
+        def kbhit(self):
+            raise AssertionError("kbhit should not be called off Windows")
+
+        def getch(self):
+            raise AssertionError("getch should not be called off Windows")
+
+    monkeypatch.setattr(builtin_editor, "msvcrt", _FakeMsvcrt(), raising=False)
+    monkeypatch.setattr(builtin_editor.os, "name", "posix")
+
+    builtin_editor._drain_pending_console_input()
