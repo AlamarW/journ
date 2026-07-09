@@ -72,24 +72,20 @@ def print_write_summary(
     words_per_minute: float,
     streak: int,
     streak_changed: bool,
-    skip_goal_line: bool = False,
     milestones: list[tuple[str, int]] = (),
     private: bool = False,
 ) -> None:
     from journ.words import format_elapsed
 
     lines = []
-    if not skip_goal_line:
-        if goal_met:
-            lines.append(
-                f"[bold green]✓[/bold green] {word_count} words -- over your goal of "
-                f"{writing_goal}!"
-            )
-        else:
-            lines.append(
-                f"[bold yellow]○[/bold yellow] {word_count} words -- under your goal of "
-                f"{writing_goal}"
-            )
+    if goal_met:
+        lines.append(
+            f"[bold green]✓[/bold green] {word_count} words -- over your goal of {writing_goal}!"
+        )
+    else:
+        lines.append(
+            f"[bold yellow]○[/bold yellow] {word_count} words -- under your goal of {writing_goal}"
+        )
     lines.append(f"Journalled for {format_elapsed(elapsed)}, {words_per_minute} words/minute")
     if streak_changed:
         lines.append(f"[bold cyan]Streak is now {streak} day(s)![/bold cyan]")

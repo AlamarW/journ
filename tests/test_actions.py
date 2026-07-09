@@ -6,7 +6,7 @@ from journ.models import JournalEntry
 from journ.words import count_words
 
 
-def test_builtin_editor_never_touches_tmp_dir_and_skips_redundant_goal_line(
+def test_builtin_editor_never_touches_tmp_dir_and_prints_goal_line(
     db, tmp_path, monkeypatch, capsys
 ):
     db.create_profile(writing_goal=5)
@@ -29,8 +29,7 @@ def test_builtin_editor_never_touches_tmp_dir_and_skips_redundant_goal_line(
     assert entry.content.decode("utf-8") == "written via builtin"
 
     output = capsys.readouterr().out
-    assert "over your goal" not in output
-    assert "under your goal" not in output
+    assert "under your goal" in output
     assert "Streak" in output or "streak" in output
 
 

@@ -275,7 +275,6 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
         words_per_minute=wpm,
         streak=new_streak,
         streak_changed=(new_streak != profile.streak),
-        skip_goal_line=used_builtin,
         milestones=milestones,
         private=is_private,
     )
