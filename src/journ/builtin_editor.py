@@ -11,12 +11,10 @@ terminal on all three platforms does.
 
 from __future__ import annotations
 
+import ctypes
 import os
 from dataclasses import dataclass
 from datetime import date
-
-if os.name == "nt":
-    import msvcrt
 
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Static, TextArea
@@ -114,17 +112,23 @@ class JournEditorApp(App):
         status.update(self._status_text(count_words(text_area.text)))
 
 
+_STD_INPUT_HANDLE = -10
+
+
 def _drain_pending_console_input() -> None:
-    """Windows-only: Textual's raw-mode console session can leave a stray event (e.g. a
-    key-up record for the Ctrl+S used to save) sitting in the console's input buffer once it
-    exits. If it's not drained here, pyreadline3 -- which the (journ) shell prompt uses for
-    readline-style editing on Windows -- picks it up on the next input() call and
-    misinterprets it as its own forward-i-search binding, dropping the user into an i-search
-    prompt instead of the next (journ) prompt."""
+    """Windows-only: Textual's raw-mode console session (or the getpass passphrase prompt
+    before it) can leave a stray input record sitting in the console's input buffer once it
+    exits -- msvcrt.kbhit()/getch() only see legacy "character ready" events and can miss
+    other record types (e.g. a key-up record), so this uses the Win32 FlushConsoleInputBuffer
+    API instead, which unconditionally discards every pending record regardless of type. If
+    nothing is drained here, pyreadline3 -- which the (journ) shell prompt uses for
+    readline-style editing on Windows -- can pick up a leftover record on the next input()
+    call and misinterpret it as its own forward-i-search binding, dropping the user into an
+    i-search prompt instead of the next (journ) prompt."""
     if os.name != "nt":
         return
-    while msvcrt.kbhit():
-        msvcrt.getch()
+    handle = ctypes.windll.kernel32.GetStdHandle(_STD_INPUT_HANDLE)
+    ctypes.windll.kernel32.FlushConsoleInputBuffer(handle)
 
 
 def run_builtin_editor(

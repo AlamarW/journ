@@ -89,38 +89,41 @@ async def test_initial_private_true_carries_through_to_save():
     assert app.result.private is True
 
 
-def test_drain_pending_console_input_consumes_buffered_keystrokes(monkeypatch):
-    calls = {"getch": 0}
+def test_drain_pending_console_input_flushes_console_input_buffer(monkeypatch):
+    calls = []
 
-    class _FakeMsvcrt:
-        def __init__(self):
-            self._pending = 3
+    class _FakeKernel32:
+        def GetStdHandle(self, handle_id):
+            calls.append(("GetStdHandle", handle_id))
+            return 42
 
-        def kbhit(self):
-            return self._pending > 0
+        def FlushConsoleInputBuffer(self, handle):
+            calls.append(("FlushConsoleInputBuffer", handle))
 
-        def getch(self):
-            calls["getch"] += 1
-            self._pending -= 1
-            return b"\x13"
+    class _FakeWindll:
+        kernel32 = _FakeKernel32()
 
-    monkeypatch.setattr(builtin_editor, "msvcrt", _FakeMsvcrt(), raising=False)
+    monkeypatch.setattr(builtin_editor.ctypes, "windll", _FakeWindll(), raising=False)
     monkeypatch.setattr(builtin_editor.os, "name", "nt")
 
     builtin_editor._drain_pending_console_input()
 
-    assert calls["getch"] == 3
+    assert ("GetStdHandle", builtin_editor._STD_INPUT_HANDLE) in calls
+    assert ("FlushConsoleInputBuffer", 42) in calls
 
 
 def test_drain_pending_console_input_is_a_noop_off_windows(monkeypatch):
-    class _FakeMsvcrt:
-        def kbhit(self):
-            raise AssertionError("kbhit should not be called off Windows")
+    class _FakeKernel32:
+        def GetStdHandle(self, handle_id):
+            raise AssertionError("GetStdHandle should not be called off Windows")
 
-        def getch(self):
-            raise AssertionError("getch should not be called off Windows")
+        def FlushConsoleInputBuffer(self, handle):
+            raise AssertionError("FlushConsoleInputBuffer should not be called off Windows")
 
-    monkeypatch.setattr(builtin_editor, "msvcrt", _FakeMsvcrt(), raising=False)
+    class _FakeWindll:
+        kernel32 = _FakeKernel32()
+
+    monkeypatch.setattr(builtin_editor.ctypes, "windll", _FakeWindll(), raising=False)
     monkeypatch.setattr(builtin_editor.os, "name", "posix")
 
     builtin_editor._drain_pending_console_input()
