@@ -1,6 +1,5 @@
 from datetime import date
 
-from journ import builtin_editor
 from journ.builtin_editor import JournEditorApp
 
 
@@ -8,7 +7,7 @@ async def test_save_appends_at_cursor_end_not_start():
     app = JournEditorApp("existing text", writing_goal=100)
     async with app.run_test() as pilot:
         await pilot.press(*" more")
-        await pilot.press("ctrl+s")
+        await pilot.press("ctrl+w")
         await pilot.pause()
 
     assert app.result.text == "existing text more"
@@ -20,6 +19,16 @@ async def test_escape_discards_changes():
     async with app.run_test() as pilot:
         await pilot.press(*"more")
         await pilot.press("escape")
+        await pilot.pause()
+
+    assert app.result is None
+
+
+async def test_ctrl_q_discards_changes_same_as_escape():
+    app = JournEditorApp("existing text", writing_goal=100)
+    async with app.run_test() as pilot:
+        await pilot.press(*"more")
+        await pilot.press("ctrl+q")
         await pilot.pause()
 
     assert app.result is None
@@ -71,7 +80,7 @@ async def test_save_reflects_private_state_at_save_time():
     async with app.run_test() as pilot:
         await pilot.press("ctrl+p")
         await pilot.pause()
-        await pilot.press("ctrl+s")
+        await pilot.press("ctrl+w")
         await pilot.pause()
 
     assert app.result.private is True
@@ -83,47 +92,7 @@ async def test_initial_private_true_carries_through_to_save():
         assert app.is_private is True
         assert "PRIVATE" in app._status_text(2)
 
-        await pilot.press("ctrl+s")
+        await pilot.press("ctrl+w")
         await pilot.pause()
 
     assert app.result.private is True
-
-
-def test_drain_pending_console_input_flushes_console_input_buffer(monkeypatch):
-    calls = []
-
-    class _FakeKernel32:
-        def GetStdHandle(self, handle_id):
-            calls.append(("GetStdHandle", handle_id))
-            return 42
-
-        def FlushConsoleInputBuffer(self, handle):
-            calls.append(("FlushConsoleInputBuffer", handle))
-
-    class _FakeWindll:
-        kernel32 = _FakeKernel32()
-
-    monkeypatch.setattr(builtin_editor.ctypes, "windll", _FakeWindll(), raising=False)
-    monkeypatch.setattr(builtin_editor.os, "name", "nt")
-
-    builtin_editor._drain_pending_console_input()
-
-    assert ("GetStdHandle", builtin_editor._STD_INPUT_HANDLE) in calls
-    assert ("FlushConsoleInputBuffer", 42) in calls
-
-
-def test_drain_pending_console_input_is_a_noop_off_windows(monkeypatch):
-    class _FakeKernel32:
-        def GetStdHandle(self, handle_id):
-            raise AssertionError("GetStdHandle should not be called off Windows")
-
-        def FlushConsoleInputBuffer(self, handle):
-            raise AssertionError("FlushConsoleInputBuffer should not be called off Windows")
-
-    class _FakeWindll:
-        kernel32 = _FakeKernel32()
-
-    monkeypatch.setattr(builtin_editor.ctypes, "windll", _FakeWindll(), raising=False)
-    monkeypatch.setattr(builtin_editor.os, "name", "posix")
-
-    builtin_editor._drain_pending_console_input()

@@ -51,7 +51,7 @@ Tools like Notepad are fine text editors but have no idea you're journaling — 
 no sense of your daily goal. `journ editor set` offers journ's own built-in editor as an
 option on every platform (Windows, WSL/Linux, and macOS): a minimal, distraction-free,
 full-screen text area with a live word count and goal indicator in the footer.
-<kbd>Ctrl+S</kbd> saves and exits, <kbd>Esc</kbd> discards and exits. It's also the only
+<kbd>Ctrl+W</kbd> saves and exits, <kbd>Esc</kbd> (or <kbd>Ctrl+Q</kbd>) discards and exits. It's also the only
 editor option where your entry never touches disk in plaintext — the external-editor path
 below still needs a real temp file for your editor to open, but the built-in editor holds
 your entry in memory and encrypts it directly.
