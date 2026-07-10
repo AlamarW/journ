@@ -25,6 +25,16 @@ def test_word_frequency_filters_stopwords_and_short_words():
     assert freq["fox"] == 2
 
 
+def test_word_frequency_filters_conversational_filler_words():
+    texts = ["It was really really good and I like really like the garden we visited actually"]
+    freq = dict(content.word_frequency(texts))
+
+    assert "really" not in freq
+    assert "like" not in freq
+    assert "actually" not in freq
+    assert "garden" in freq
+
+
 def test_word_frequency_respects_top_n():
     texts = ["apple banana cherry date everyone forest garden"]
     top = content.word_frequency(texts, top_n=2)
