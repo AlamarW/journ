@@ -714,7 +714,9 @@ class StatsTotals:
 def get_calendar_data(
     db: Database, weeks: int = 12, today: date | None = None
 ) -> tuple[list[list[analytics.CalendarDay]], float]:
-    entries = filter_private(db.all_entries(), include_private=False)
+    # Private only hides an entry's text, not the fact you wrote it -- this is metadata
+    # (word count, whether you wrote that day), so private entries count same as any other.
+    entries = db.all_entries()
     grid = analytics.build_calendar(entries, weeks=weeks, today=today)
     score = analytics.consistency_score(entries, today=today)
     return grid, score
@@ -729,9 +731,8 @@ def show_calendar(db: Database) -> None:
 def get_trends_data(
     db: Database, days: int, today: date | None = None
 ) -> list[analytics.TrendPoint]:
-    return analytics.trend_series(
-        filter_private(db.all_entries(), include_private=False), days=days, today=today
-    )
+    # Metadata only (word counts/goal-met per day) -- private entries count, same as calendar.
+    return analytics.trend_series(db.all_entries(), days=days, today=today)
 
 
 def show_trends(db: Database, days: int) -> None:
@@ -743,9 +744,8 @@ def get_records_data(db: Database) -> analytics.Records | None:
     profile = db.get_profile()
     if profile is None:
         return None
-    return analytics.personal_records(
-        filter_private(db.all_entries(), include_private=False), profile
-    )
+    # Metadata only (word counts, dates, streaks) -- private entries count, same as calendar.
+    return analytics.personal_records(db.all_entries(), profile)
 
 
 def show_records(db: Database) -> None:
@@ -754,7 +754,8 @@ def show_records(db: Database) -> None:
 
 
 def get_patterns_data(db: Database) -> analytics.PatternSummary:
-    return analytics.writing_pattern(filter_private(db.all_entries(), include_private=False))
+    # Metadata only (day/time counts) -- private entries count, same as calendar.
+    return analytics.writing_pattern(db.all_entries())
 
 
 def show_patterns(db: Database) -> None:
@@ -769,8 +770,9 @@ def get_goal_suggestion(
     profile = db.get_profile()
     if profile is None:
         return None, None
+    # Metadata only (word-count trend) -- private entries count, same as calendar.
     suggestion = analytics.suggest_goal(
-        filter_private(db.all_entries(), include_private=False),
+        db.all_entries(),
         profile.writing_goal,
         days=days,
         today=today,

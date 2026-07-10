@@ -759,7 +759,10 @@ def test_export_journal_all_private_prints_message_without_writing(db, tmp_path,
     assert "--include-private" in capsys.readouterr().out
 
 
-def test_get_calendar_data_excludes_private_entries(db):
+def test_get_calendar_data_counts_private_entries(db):
+    # Private only hides an entry's text, not the fact you wrote it -- calendar/trends/
+    # records/patterns/goal-suggestion are metadata-only, so private entries count same as
+    # any other (unlike search/frequency/on-this-day/export, which reveal actual content).
     db.create_profile(writing_goal=1)
     today = date(2026, 7, 8)
     db.upsert_entry(
@@ -776,11 +779,11 @@ def test_get_calendar_data_excludes_private_entries(db):
     )
     grid, _score = actions.get_calendar_data(db, weeks=1, today=today)
     matching = [day for week in grid for day in week if day.day == today]
-    assert matching[0].wrote is False
-    assert matching[0].word_count is None
+    assert matching[0].wrote is True
+    assert matching[0].word_count == 10
 
 
-def test_get_trends_data_excludes_private_entries(db):
+def test_get_trends_data_counts_private_entries(db):
     db.create_profile(writing_goal=1)
     today = date(2026, 7, 8)
     db.upsert_entry(
@@ -796,11 +799,11 @@ def test_get_trends_data_excludes_private_entries(db):
         )
     )
     points = actions.get_trends_data(db, days=1, today=today)
-    assert points[0].word_count == 0
-    assert points[0].goal_met is False
+    assert points[0].word_count == 10
+    assert points[0].goal_met is True
 
 
-def test_get_records_data_excludes_private_entries(db):
+def test_get_records_data_counts_private_entries(db):
     db.create_profile(writing_goal=1)
     db.upsert_entry(
         JournalEntry(
@@ -826,11 +829,11 @@ def test_get_records_data_excludes_private_entries(db):
         )
     )
     records = actions.get_records_data(db)
-    assert records.longest_entry_words == 10
-    assert records.longest_entry_date == date(2026, 7, 2)
+    assert records.longest_entry_words == 500
+    assert records.longest_entry_date == date(2026, 7, 1)
 
 
-def test_get_patterns_data_excludes_private_entries(db):
+def test_get_patterns_data_counts_private_entries(db):
     db.create_profile(writing_goal=1)
     db.upsert_entry(
         JournalEntry(
@@ -845,11 +848,11 @@ def test_get_patterns_data_excludes_private_entries(db):
         )
     )
     summary = actions.get_patterns_data(db)
-    assert sum(summary.by_day_of_week.values()) == 0
-    assert sum(summary.by_time_of_day.values()) == 0
+    assert sum(summary.by_day_of_week.values()) == 1
+    assert sum(summary.by_time_of_day.values()) == 1
 
 
-def test_get_goal_suggestion_excludes_private_entries(db):
+def test_get_goal_suggestion_counts_private_entries(db):
     db.create_profile(writing_goal=100)
     today = date(2026, 7, 8)
     db.upsert_entry(
@@ -866,7 +869,7 @@ def test_get_goal_suggestion_excludes_private_entries(db):
     )
     current, suggestion = actions.get_goal_suggestion(db, today=today)
     assert current == 100
-    assert suggestion is None
+    assert suggestion == 1000
 
 
 def test_get_word_frequency_excludes_private_entries_by_default(db):
