@@ -153,6 +153,7 @@ async def test_vim_keys_step_next_and_prev_in_detail_view(db):
     db.create_profile(writing_goal=750)
     db.upsert_entry(_entry(date(2026, 7, 1), "day one"))
     db.upsert_entry(_entry(date(2026, 7, 2), "day two"))
+    db.upsert_entry(_entry(date(2026, 7, 3), "day three"))
     profile = db.get_profile()
 
     app = browse.BrowseApp(db, profile, key=None, start_date=date(2026, 7, 1))
@@ -165,6 +166,14 @@ async def test_vim_keys_step_next_and_prev_in_detail_view(db):
         await pilot.pause()
         assert app.current_date == date(2026, 7, 1)
 
+        await pilot.press("l")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 2)
+
+        await pilot.press("h")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 1)
+
 
 async def test_footer_shows_next_prev_list_edit_hints_in_detail_view(db):
     db.create_profile(writing_goal=750)
@@ -173,7 +182,7 @@ async def test_footer_shows_next_prev_list_edit_hints_in_detail_view(db):
 
     app = browse.BrowseApp(db, profile, key=None, start_date=date(2026, 7, 1))
     async with app.run_test(size=(100, 24)) as pilot:
-        await pilot.pause()
+        await pilot.pause(0.1)
         footer_text = app.export_screenshot(simplify=True)
         for label in ("Next", "Prev", "List", "Edit", "Quit"):
             assert label in footer_text
@@ -189,7 +198,7 @@ async def test_list_command_returns_to_list_view(db):
     async with app.run_test() as pilot:
         assert app.mode == "detail"
 
-        await pilot.press("l")
+        await pilot.press("b")
         await pilot.pause()
 
         assert app.mode == "list"

@@ -43,10 +43,12 @@ class _EntryText(Static):
         Binding("n", "app.next", "Next"),
         Binding("down", "app.next", "Next", show=False),
         Binding("j", "app.next", "Next", show=False),
+        Binding("l", "app.next", "Next", show=False),
         Binding("p", "app.prev", "Prev"),
         Binding("up", "app.prev", "Prev", show=False),
         Binding("k", "app.prev", "Prev", show=False),
-        Binding("l", "app.back_to_list", "List"),
+        Binding("h", "app.prev", "Prev", show=False),
+        Binding("b", "app.back_to_list", "List"),
         Binding("escape", "app.back_to_list", "List", show=False),
         Binding("e", "app.edit", "Edit"),
     ]
