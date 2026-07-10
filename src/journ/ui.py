@@ -16,6 +16,7 @@ from rich.table import Table
 
 from journ import analytics
 from journ.content import DecryptedEntry
+from journ.models import JournalEntry
 
 console = Console()
 
@@ -270,6 +271,30 @@ def print_on_this_day(entries: list[DecryptedEntry]) -> None:
                 border_style="cyan",
             )
         )
+
+
+def print_entry_list(entries: list[JournalEntry]) -> None:
+    if not entries:
+        console.print("No entries yet. Write one with `write`.")
+        return
+    table = Table(title="Journal entries", title_justify="left")
+    table.add_column("Date")
+    table.add_column("Words", justify="right")
+    for entry in entries:
+        words = str(entry.word_count) if entry.word_count is not None else "-"
+        table.add_row(entry.entry_date.isoformat(), words)
+    console.print(table)
+
+
+def print_browse_entry(entry: DecryptedEntry) -> None:
+    console.print(
+        Panel(
+            entry.text,
+            title=entry.entry_date.isoformat(),
+            title_align="left",
+            border_style="cyan",
+        )
+    )
 
 
 def print_goal_suggestion(*, current_goal: int, suggested: int | None) -> None:

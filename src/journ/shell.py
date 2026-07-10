@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
-from journ import actions, ui
+from journ import actions, browse, ui
 from journ.actions import PassphraseError
 from journ.db import Database
 from journ.terminal import clear_screen
@@ -18,7 +18,7 @@ from journ.terminal import clear_screen
 # Grouped for the custom `help` overview -- deliberately excludes the do_journ/do_EOF
 # aliases, which exist for backward compatibility and Ctrl+D but would just be noise here.
 _HELP_GROUPS = [
-    ("Write", ["write", "edit", "private", "stats", "streak", "last", "goal"]),
+    ("Write", ["write", "edit", "read", "private", "stats", "streak", "last", "goal"]),
     (
         "Analytics",
         [
@@ -92,6 +92,24 @@ class JournalingShell(cmd.Cmd):
             print("Usage: edit <date> [private|unprivate]")
             return
         self._run(lambda: actions.edit_entry(self.db, entry_date, private=private))
+
+    def do_read(self, line):
+        "Browse past entries: 'read', 'read 2026-07-01', or add 'include-private'"
+        parts = line.strip().split()
+        include_private = "include-private" in parts
+        date_tokens = [p for p in parts if p != "include-private"]
+        start_date = None
+        if date_tokens:
+            try:
+                start_date = date.fromisoformat(date_tokens[0])
+            except ValueError:
+                print("Date must be in YYYY-MM-DD format.")
+                return
+        self._run(
+            lambda: browse.browse_entries(
+                self.db, start_date=start_date, include_private=include_private
+            )
+        )
 
     def do_private(self, line):
         "Flag or unflag an entry as private: 'private 2026-07-01' or 'private 2026-07-01 unset'"

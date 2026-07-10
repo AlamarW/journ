@@ -92,3 +92,31 @@ def test_do_edit_rejects_no_argument(db, capsys):
     shell = JournalingShell(db)
     shell.do_edit("")
     assert "Usage: edit" in capsys.readouterr().out
+
+
+def test_do_read_rejects_bad_date(db, capsys):
+    db.create_profile(writing_goal=750)
+    shell = JournalingShell(db)
+    shell.do_read("not-a-date")
+    assert "YYYY-MM-DD" in capsys.readouterr().out
+
+
+def test_do_read_with_no_argument_starts_at_list_view(db, monkeypatch, capsys):
+    db.create_profile(writing_goal=750)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1),
+            content=b"an entry",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=False,
+            updated_at="x",
+            word_count=2,
+        )
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt="": "q")
+
+    shell = JournalingShell(db)
+    shell.do_read("")
+
+    assert "Journal entries" in capsys.readouterr().out

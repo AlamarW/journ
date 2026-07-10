@@ -10,7 +10,7 @@ from pathlib import Path
 
 import typer
 
-from journ import actions, config, ui
+from journ import actions, browse, config, ui
 from journ.actions import PassphraseError
 from journ.db import Database
 from journ.shell import JournalingShell
@@ -100,6 +100,25 @@ def edit(
     with _open_db() as db:
         _run(
             lambda: actions.edit_entry(db, date.fromisoformat(entry_date), private=resolved_private)
+        )
+
+
+@app.command()
+def read(
+    entry_date: str = typer.Argument(
+        None, help="ISO date (YYYY-MM-DD) to jump straight to. Omit to start from the list."
+    ),
+    include_private: bool = typer.Option(
+        False, "--include-private", help="Include entries flagged private while browsing."
+    ),
+) -> None:
+    """Browse past entries: a list view, step through with next/prev, or edit from within."""
+    start_date = date.fromisoformat(entry_date) if entry_date else None
+    with _open_db() as db:
+        _run(
+            lambda: browse.browse_entries(
+                db, start_date=start_date, include_private=include_private
+            )
         )
 
 

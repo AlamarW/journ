@@ -237,6 +237,31 @@ def test_edit_command_rejects_editing_today(tmp_path, monkeypatch):
     assert "Use `write`" in result.output
 
 
+def test_read_command_with_no_date_starts_at_list_view(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write"], input="5\nn\n")
+
+    result = runner.invoke(cli.app, ["read"], input="q\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Journal entries" in result.output
+
+
+def test_read_command_with_date_jumps_straight_to_detail_view(tmp_path, monkeypatch):
+    global STUB_EDITOR
+    STUB_EDITOR = _write_stub_editor(tmp_path)
+    _isolate(tmp_path, monkeypatch)
+    runner.invoke(cli.app, ["write"], input="5\nn\n")
+
+    today = date.today().isoformat()
+    result = runner.invoke(cli.app, ["read", today], input="q\n")
+
+    assert result.exit_code == 0, result.output
+    assert "stub" in result.output
+
+
 def test_mcp_unlock_status_lock_flow(tmp_path, monkeypatch, fake_keyring):
     _isolate(tmp_path, monkeypatch)
     # First-run profile setup with a passphrase this time.
