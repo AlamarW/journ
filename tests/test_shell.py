@@ -1,5 +1,6 @@
 from datetime import date
 
+from journ import shell as shell_module
 from journ.models import JournalEntry
 from journ.shell import _HELP_GROUPS, JournalingShell
 
@@ -101,22 +102,23 @@ def test_do_read_rejects_bad_date(db, capsys):
     assert "YYYY-MM-DD" in capsys.readouterr().out
 
 
-def test_do_read_with_no_argument_starts_at_list_view(db, monkeypatch, capsys):
+def test_do_read_parses_date_and_include_private_token(db, monkeypatch):
+    # browse_entries launches a full-screen Textual app, which isn't drivable through a
+    # scripted builtins.input() (Textual reads raw terminal bytes via its own driver) -- so
+    # this only verifies do_read parses its arguments and calls through correctly.
     db.create_profile(writing_goal=750)
-    db.upsert_entry(
-        JournalEntry(
-            entry_date=date(2026, 7, 1),
-            content=b"an entry",
-            is_encrypted=False,
-            words_per_minute=None,
-            accomplished_goal=False,
-            updated_at="x",
-            word_count=2,
-        )
+    calls = []
+    monkeypatch.setattr(
+        shell_module.browse,
+        "browse_entries",
+        lambda db, start_date=None, include_private=False: calls.append(
+            (start_date, include_private)
+        ),
     )
-    monkeypatch.setattr("builtins.input", lambda prompt="": "q")
-
     shell = JournalingShell(db)
-    shell.do_read("")
 
-    assert "Journal entries" in capsys.readouterr().out
+    shell.do_read("")
+    assert calls[-1] == (None, False)
+
+    shell.do_read("2026-07-01 include-private")
+    assert calls[-1] == (date(2026, 7, 1), True)

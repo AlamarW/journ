@@ -1,4 +1,8 @@
+import contextlib
+import sys
 from datetime import date
+
+from textual.widgets import OptionList, Static
 
 from journ import actions, browse, config
 from journ.builtin_editor import EditorResult
@@ -18,23 +22,23 @@ def _entry(entry_date, text, private=False):
     )
 
 
-def _scripted_input(monkeypatch, responses):
-    it = iter(responses)
-
-    def _input(prompt=""):
-        try:
-            return next(it)
-        except StopIteration:
-            raise AssertionError("input() called more times than scripted") from None
-
-    monkeypatch.setattr("builtins.input", _input)
+def _visible_text(app) -> str:
+    return str(app.query_one("#entry-text", Static).visual)
 
 
-def _forbid_input(monkeypatch):
-    def _fail(prompt=""):
-        raise AssertionError("input() should not be called when there's nothing to browse")
+def _fake_suspend_using(stdout, stderr):
+    # The real App.suspend() redirects stdout/stderr to the true console streams while
+    # suspended, since Textual's App replaces sys.stdout with its own capture object while
+    # running -- edit_entry's prints need an equivalent redirect here. Using whatever
+    # stdout/stderr were live *before* run_test() started (pytest's own capture) rather than
+    # sys.__stdout__ avoids depending on the real console's encoding, which the test
+    # environment doesn't control.
+    @contextlib.contextmanager
+    def _fake_suspend():
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            yield
 
-    monkeypatch.setattr("builtins.input", _fail)
+    return _fake_suspend
 
 
 def test_adjacent_entry_date_steps_forward_and_backward():
@@ -54,71 +58,96 @@ def test_adjacent_entry_date_returns_none_for_unknown_date():
     assert browse.adjacent_entry_date(dates, date(2099, 1, 1), 1) is None
 
 
-def test_browse_entries_reports_empty_journal(db, monkeypatch, capsys):
+def test_browse_entries_reports_empty_journal_without_launching_app(db, monkeypatch, capsys):
     db.create_profile(writing_goal=750)
-    _forbid_input(monkeypatch)
+
+    def _forbid(*args, **kwargs):
+        raise AssertionError("BrowseApp should not be constructed for an empty journal")
+
+    monkeypatch.setattr(browse, "BrowseApp", _forbid)
 
     browse.browse_entries(db)
 
     assert "No entries yet" in capsys.readouterr().out
 
 
-def test_browse_entries_list_then_open_entry(db, monkeypatch, capsys):
+async def test_list_shows_entries_newest_first_and_opens_detail_on_select(db):
     db.create_profile(writing_goal=750)
-    db.upsert_entry(_entry(date(2026, 7, 1), "hello from the past"))
-    _scripted_input(monkeypatch, ["2026-07-01", "q"])
+    db.upsert_entry(_entry(date(2026, 7, 1), "first entry"))
+    db.upsert_entry(_entry(date(2026, 7, 3), "third entry"))
+    profile = db.get_profile()
 
-    browse.browse_entries(db)
+    app = browse.BrowseApp(db, profile, key=None)
+    async with app.run_test() as pilot:
+        option_list = app.query_one("#entry-list", OptionList)
+        assert option_list.option_count == 2
+        assert "2026-07-03" in str(option_list.get_option_at_index(0).prompt)
+        assert "2026-07-01" in str(option_list.get_option_at_index(1).prompt)
 
-    output = capsys.readouterr().out
-    assert "Journal entries" in output
-    assert "2026-07-01" in output
-    assert "hello from the past" in output
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
 
-
-def test_browse_entries_rejects_unknown_date_and_stays_at_list(db, monkeypatch, capsys):
-    db.create_profile(writing_goal=750)
-    db.upsert_entry(_entry(date(2026, 7, 1), "only entry"))
-    _scripted_input(monkeypatch, ["2099-01-01", "q"])
-
-    browse.browse_entries(db)
-
-    assert "No entry on that date." in capsys.readouterr().out
+        assert app.mode == "detail"
+        assert app.current_date == date(2026, 7, 3)
+        assert "third entry" in _visible_text(app)
 
 
-def test_browse_entries_next_and_prev_navigate_and_hit_boundaries(db, monkeypatch, capsys):
+async def test_next_and_prev_navigate_and_hit_boundaries(db):
     db.create_profile(writing_goal=750)
     db.upsert_entry(_entry(date(2026, 7, 1), "day one"))
     db.upsert_entry(_entry(date(2026, 7, 2), "day two"))
     db.upsert_entry(_entry(date(2026, 7, 3), "day three"))
-    _scripted_input(monkeypatch, ["n", "n", "p", "p", "p", "q"])
+    profile = db.get_profile()
 
-    browse.browse_entries(db, start_date=date(2026, 7, 1))
+    app = browse.BrowseApp(db, profile, key=None, start_date=date(2026, 7, 1))
+    async with app.run_test() as pilot:
+        assert app.current_date == date(2026, 7, 1)
 
-    output = capsys.readouterr().out
-    assert "day one" in output
-    assert "day two" in output
-    assert "day three" in output
-    assert "Already at the earliest entry." in output
+        await pilot.press("n")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 2)
+
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 3)
+
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 3)
+        assert any("most recent" in n.message for n in app._notifications)
+
+        await pilot.press("p")
+        await pilot.press("up")
+        await pilot.press("up")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 1)
+        assert any("earliest" in n.message for n in app._notifications)
 
 
-def test_browse_entries_list_command_returns_to_list_view(db, monkeypatch, capsys):
+async def test_list_command_returns_to_list_view(db):
     db.create_profile(writing_goal=750)
     db.upsert_entry(_entry(date(2026, 7, 1), "day one"))
     db.upsert_entry(_entry(date(2026, 7, 2), "day two"))
-    _scripted_input(monkeypatch, ["l", "2026-07-02", "q"])
+    profile = db.get_profile()
 
-    browse.browse_entries(db, start_date=date(2026, 7, 1))
+    app = browse.BrowseApp(db, profile, key=None, start_date=date(2026, 7, 1))
+    async with app.run_test() as pilot:
+        assert app.mode == "detail"
 
-    output = capsys.readouterr().out
-    assert output.count("Journal entries") == 1
-    assert "day two" in output
+        await pilot.press("l")
+        await pilot.pause()
+
+        assert app.mode == "list"
+        option_list = app.query_one("#entry-list", OptionList)
+        assert option_list.option_count == 2
 
 
-def test_browse_entries_edit_hands_off_and_redisplays(db, monkeypatch, capsys):
+async def test_edit_hands_off_and_redisplays_updated_entry(db, monkeypatch):
     db.create_profile(writing_goal=1)
     past = date(2026, 7, 1)
     db.upsert_entry(_entry(past, "original text"))
+    profile = db.get_profile()
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
     monkeypatch.setattr(
         actions,
@@ -127,46 +156,62 @@ def test_browse_entries_edit_hands_off_and_redisplays(db, monkeypatch, capsys):
             text="edited text", private=priv
         ),
     )
-    _scripted_input(monkeypatch, ["e", "q"])
 
-    browse.browse_entries(db, start_date=past)
+    app = browse.BrowseApp(db, profile, key=None, start_date=past)
+    monkeypatch.setattr(app, "suspend", _fake_suspend_using(sys.stdout, sys.stderr))
 
-    output = capsys.readouterr().out
-    assert "edited text" in output
+    async with app.run_test() as pilot:
+        await pilot.press("e")
+        await pilot.pause()
+
+        assert app.mode == "detail"
+        assert "edited text" in _visible_text(app)
+        assert db.get_entry(past).content.decode("utf-8") == "edited text"
 
 
-def test_browse_entries_excludes_private_entries_by_default(db, monkeypatch, capsys):
+async def test_excludes_private_entries_by_default(db):
     db.create_profile(writing_goal=750)
     db.upsert_entry(_entry(date(2026, 7, 1), "public entry"))
     db.upsert_entry(_entry(date(2026, 7, 2), "secret entry", private=True))
-    _scripted_input(monkeypatch, ["q"])
+    profile = db.get_profile()
 
-    browse.browse_entries(db)
+    app = browse.BrowseApp(db, profile, key=None)
+    async with app.run_test():
+        option_list = app.query_one("#entry-list", OptionList)
+        assert option_list.option_count == 1
+        assert "2026-07-01" in str(option_list.get_option_at_index(0).prompt)
 
-    output = capsys.readouterr().out
-    assert "2026-07-01" in output
-    assert "2026-07-02" not in output
 
-
-def test_browse_entries_include_private_shows_private_entries(db, monkeypatch, capsys):
+async def test_include_private_shows_private_entries(db):
     db.create_profile(writing_goal=750)
     db.upsert_entry(_entry(date(2026, 7, 1), "public entry"))
     db.upsert_entry(_entry(date(2026, 7, 2), "secret entry", private=True))
-    _scripted_input(monkeypatch, ["q"])
+    profile = db.get_profile()
 
-    browse.browse_entries(db, include_private=True)
+    app = browse.BrowseApp(db, profile, key=None, include_private=True)
+    async with app.run_test():
+        option_list = app.query_one("#entry-list", OptionList)
+        assert option_list.option_count == 2
 
-    output = capsys.readouterr().out
-    assert "2026-07-02" in output
+
+async def test_unknown_start_date_stays_at_list_with_notification(db):
+    db.create_profile(writing_goal=750)
+    db.upsert_entry(_entry(date(2026, 7, 1), "only entry"))
+    profile = db.get_profile()
+
+    app = browse.BrowseApp(db, profile, key=None, start_date=date(2099, 1, 1))
+    async with app.run_test():
+        assert app.mode == "list"
+        assert any("No entry on that date" in n.message for n in app._notifications)
 
 
-def test_browse_entries_eof_exits_cleanly(db, monkeypatch, capsys):
+async def test_quit_exits_the_app(db):
     db.create_profile(writing_goal=750)
     db.upsert_entry(_entry(date(2026, 7, 1), "an entry"))
+    profile = db.get_profile()
 
-    def _raise_eof(prompt=""):
-        raise EOFError
-
-    monkeypatch.setattr("builtins.input", _raise_eof)
-
-    browse.browse_entries(db)  # should not raise
+    app = browse.BrowseApp(db, profile, key=None)
+    async with app.run_test() as pilot:
+        await pilot.press("q")
+        await pilot.pause()
+        assert app._exit is True

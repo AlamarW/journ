@@ -237,29 +237,30 @@ def test_edit_command_rejects_editing_today(tmp_path, monkeypatch):
     assert "Use `write`" in result.output
 
 
-def test_read_command_with_no_date_starts_at_list_view(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
+def test_read_command_parses_date_and_include_private_flag(tmp_path, monkeypatch):
+    # browse_entries launches a full-screen Textual app, which can't be driven through
+    # CliRunner's stdin simulation (Textual reads raw terminal bytes via its own driver, not
+    # input()) -- so this only verifies the CLI layer parses arguments and calls through,
+    # the same boundary the built-in editor's CLI wiring is tested at (see _isolate always
+    # pointing EDITOR at an external stub rather than exercising the Textual editor here).
     _isolate(tmp_path, monkeypatch)
-    runner.invoke(cli.app, ["write"], input="5\nn\n")
+    calls = []
+    monkeypatch.setattr(
+        cli.browse,
+        "browse_entries",
+        lambda db, start_date=None, include_private=False: calls.append(
+            (start_date, include_private)
+        ),
+    )
 
-    result = runner.invoke(cli.app, ["read"], input="q\n")
-
+    result = runner.invoke(cli.app, ["read"])
     assert result.exit_code == 0, result.output
-    assert "Journal entries" in result.output
+    assert calls[-1] == (None, False)
 
-
-def test_read_command_with_date_jumps_straight_to_detail_view(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
-    _isolate(tmp_path, monkeypatch)
-    runner.invoke(cli.app, ["write"], input="5\nn\n")
-
-    today = date.today().isoformat()
-    result = runner.invoke(cli.app, ["read", today], input="q\n")
-
+    today = date.today()
+    result = runner.invoke(cli.app, ["read", today.isoformat(), "--include-private"])
     assert result.exit_code == 0, result.output
-    assert "stub" in result.output
+    assert calls[-1] == (today, True)
 
 
 def test_mcp_unlock_status_lock_flow(tmp_path, monkeypatch, fake_keyring):

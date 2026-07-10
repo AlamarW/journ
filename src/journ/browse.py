@@ -1,15 +1,33 @@
-"""Interactive list/detail loop for read-only browsing of past entries. Split out from
-actions.py the same way builtin_editor.py splits out the write/edit editor loop -- keeps this
-multi-turn prompt loop separate from the single-shot verbs in actions.py, which is already the
-largest module in the codebase.
+"""Interactive, cursor-navigable browsing of past entries. Built on Textual for the same
+reason builtin_editor.py is: arrow-key/terminal input handled by Textual's own driver rather
+than hand-rolled raw console reads, which have been a repeated source of Windows-only bugs
+in this codebase.
+
+A single flat App (rather than Textual's Screen push/pop stack) toggles between a list view
+and a detail view by showing/hiding two always-mounted widgets -- Screen stacking hit an
+internal Textual rendering crash when popping back to a resumed screen in this version, so
+this sidesteps that entirely.
 """
 
 from __future__ import annotations
 
 from datetime import date
 
-from journ import actions, ui
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.widgets import Footer, OptionList, Static
+from textual.widgets.option_list import Option
+
+from journ import actions
 from journ.db import Database
+from journ.models import Profile
+
+
+class _EntryText(Static):
+    # Static isn't focusable by default -- without this, focus silently stays on the (hidden)
+    # OptionList in detail mode, which then intercepts up/down for its own cursor instead of
+    # letting them bubble up to the App's next/prev bindings.
+    can_focus = True
 
 
 def adjacent_entry_date(dates: list[date], current: date, step: int) -> date | None:
@@ -24,93 +42,156 @@ def adjacent_entry_date(dates: list[date], current: date, step: int) -> date | N
     return None
 
 
-def _browsable_entries(db: Database, include_private: bool):
-    # db.all_entries() is already sorted ascending by entry_date -- keep that order so
-    # adjacent_entry_date's step=+1 means "chronologically next" throughout.
-    return actions.filter_private(db.all_entries(), include_private)
+class BrowseApp(App):
+    ENABLE_COMMAND_PALETTE = False
+
+    BINDINGS = [
+        Binding("q", "quit_browse", "Quit"),
+        Binding("escape", "escape_pressed", "Back/Quit", show=False),
+        Binding("n", "next", "Next", show=False),
+        Binding("down", "next", "Next", show=False),
+        Binding("p", "prev", "Prev", show=False),
+        Binding("up", "prev", "Prev", show=False),
+        Binding("l", "back_to_list", "List", show=False),
+        Binding("e", "edit", "Edit", show=False),
+    ]
+
+    CSS = """
+    #entry-text {
+        border: round $primary;
+        height: 1fr;
+        padding: 1 2;
+    }
+    """
+
+    def __init__(
+        self,
+        db: Database,
+        profile: Profile,
+        key: bytes | None,
+        start_date: date | None = None,
+        include_private: bool = False,
+    ) -> None:
+        super().__init__()
+        self.db = db
+        self.profile = profile
+        self.key = key
+        self.include_private = include_private
+        self.start_date = start_date
+        self.entries: list = []
+        self.dates: list[date] = []
+        self.mode = "list"
+        self.current_date: date | None = None
+
+    def compose(self) -> ComposeResult:
+        yield OptionList(id="entry-list")
+        yield _EntryText(id="entry-text")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.refresh_entries()
+        self.query_one("#entry-text", Static).display = False
+        self._show_list()
+        if self.start_date is not None:
+            if self.start_date in self.dates:
+                self._show_detail(self.start_date)
+            else:
+                self.notify("No entry on that date.")
+
+    def refresh_entries(self) -> None:
+        self.entries = actions.filter_private(self.db.all_entries(), self.include_private)
+        self.dates = [e.entry_date for e in self.entries]
+
+    def adjacent_date(self, current: date, step: int) -> date | None:
+        return adjacent_entry_date(self.dates, current, step)
+
+    def _show_list(self) -> None:
+        self.mode = "list"
+        option_list = self.query_one("#entry-list", OptionList)
+        option_list.clear_options()
+        for entry in reversed(self.entries):
+            words = entry.word_count if entry.word_count is not None else "-"
+            iso_date = entry.entry_date.isoformat()
+            option_list.add_option(Option(f"{iso_date}   {words} words", id=iso_date))
+        option_list.display = True
+        self.query_one("#entry-text", Static).display = False
+        option_list.focus()
+
+    def _show_detail(self, entry_date: date) -> None:
+        decrypted = actions.get_entry_by_date(
+            self.db, self.profile, self.key, entry_date, include_private=self.include_private
+        )
+        if decrypted is None:
+            self._show_list()
+            return
+        self.current_date = entry_date
+        self.mode = "detail"
+        text_widget = self.query_one("#entry-text", Static)
+        text_widget.update(decrypted.text)
+        text_widget.border_title = entry_date.isoformat()
+        text_widget.display = True
+        self.query_one("#entry-list", OptionList).display = False
+        text_widget.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        assert event.option_id is not None
+        self._show_detail(date.fromisoformat(event.option_id))
+
+    def action_next(self) -> None:
+        if self.mode != "detail" or self.current_date is None:
+            return
+        nxt = self.adjacent_date(self.current_date, 1)
+        if nxt is None:
+            self.notify("Already at the most recent entry.")
+        else:
+            self._show_detail(nxt)
+
+    def action_prev(self) -> None:
+        if self.mode != "detail" or self.current_date is None:
+            return
+        prv = self.adjacent_date(self.current_date, -1)
+        if prv is None:
+            self.notify("Already at the earliest entry.")
+        else:
+            self._show_detail(prv)
+
+    def action_back_to_list(self) -> None:
+        if self.mode == "detail":
+            self._show_list()
+
+    def action_escape_pressed(self) -> None:
+        if self.mode == "detail":
+            self._show_list()
+        else:
+            self.action_quit_browse()
+
+    def action_edit(self) -> None:
+        if self.mode != "detail" or self.current_date is None:
+            return
+        with self.suspend():
+            actions.edit_entry(self.db, self.current_date, private=None)
+        self.refresh_entries()
+        self._show_detail(self.current_date)
+
+    def action_quit_browse(self) -> None:
+        self.exit()
 
 
 def browse_entries(
     db: Database, start_date: date | None = None, include_private: bool = False
 ) -> None:
-    """Read-only browse: a list view of every entry (date + word count), and a detail view
-    for one entry at a time with next/prev/list/edit/quit navigation. `edit` hands off to the
-    existing edit_entry verb unchanged, then this loop re-displays whatever's on screen."""
+    """Read-only browse: a cursor-navigable list of every entry (date + word count), and a
+    detail view for one entry at a time with next/prev/list/edit/quit navigation. `edit`
+    suspends this app and hands off to the existing edit_entry verb unchanged, then resumes
+    and re-renders whatever's on screen."""
     profile, key = actions.ensure_profile(db)
     if key is None:
         key = actions.unlock(profile)
 
-    entries = _browsable_entries(db, include_private)
-    dates = [e.entry_date for e in entries]
-    if not dates:
+    entries = actions.filter_private(db.all_entries(), include_private)
+    if not entries:
         print("No entries yet. Write one with `write`.")
         return
 
-    current: date | None = None
-    mode = "list"
-    if start_date is not None:
-        if start_date in dates:
-            current = start_date
-            mode = "detail"
-        else:
-            print("No entry on that date.")
-
-    try:
-        while True:
-            if mode == "list":
-                ui.print_entry_list(list(reversed(entries)))
-                choice = input("Enter a date to read, or 'q' to quit -> ").strip().lower()
-                if choice in ("", "q", "quit"):
-                    return
-                try:
-                    picked = date.fromisoformat(choice)
-                except ValueError:
-                    print("Date must be in YYYY-MM-DD format.")
-                    continue
-                if picked not in dates:
-                    print("No entry on that date.")
-                    continue
-                current = picked
-                mode = "detail"
-                continue
-
-            decrypted = actions.get_entry_by_date(
-                db, profile, key, current, include_private=include_private
-            )
-            if decrypted is None:
-                print("This entry is no longer visible with the current filters.")
-                mode = "list"
-                continue
-            ui.print_browse_entry(decrypted)
-
-            action = input("[n]ext  [p]rev  [l]ist  [e]dit  [q]uit -> ").strip().lower()
-            if action in ("q", "quit"):
-                return
-            elif action == "":
-                continue
-            elif action in ("n", "next"):
-                nxt = adjacent_entry_date(dates, current, 1)
-                if nxt is None:
-                    print("Already at the most recent entry.")
-                else:
-                    current = nxt
-            elif action in ("p", "prev"):
-                prv = adjacent_entry_date(dates, current, -1)
-                if prv is None:
-                    print("Already at the earliest entry.")
-                else:
-                    current = prv
-            elif action in ("l", "list"):
-                mode = "list"
-            elif action in ("e", "edit"):
-                actions.edit_entry(db, current, private=None)
-                entries = _browsable_entries(db, include_private)
-                dates = [e.entry_date for e in entries]
-                if current not in dates:
-                    print("This entry is no longer visible with the current filters.")
-                    mode = "list"
-            else:
-                print("Unknown command. Use n, p, l, e, or q.")
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return
+    app = BrowseApp(db, profile, key, start_date=start_date, include_private=include_private)
+    app.run()
