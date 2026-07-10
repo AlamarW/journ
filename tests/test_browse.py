@@ -125,6 +125,60 @@ async def test_next_and_prev_navigate_and_hit_boundaries(db):
         assert any("earliest" in n.message for n in app._notifications)
 
 
+async def test_vim_keys_navigate_the_list_cursor(db):
+    db.create_profile(writing_goal=750)
+    db.upsert_entry(_entry(date(2026, 7, 1), "first entry"))
+    db.upsert_entry(_entry(date(2026, 7, 3), "third entry"))
+    profile = db.get_profile()
+
+    app = browse.BrowseApp(db, profile, key=None)
+    async with app.run_test() as pilot:
+        option_list = app.query_one("#entry-list", OptionList)
+        assert option_list.highlighted is None
+
+        await pilot.press("j")
+        await pilot.pause()
+        assert option_list.highlighted == 0
+
+        await pilot.press("j")
+        await pilot.pause()
+        assert option_list.highlighted == 1
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert option_list.highlighted == 0
+
+
+async def test_vim_keys_step_next_and_prev_in_detail_view(db):
+    db.create_profile(writing_goal=750)
+    db.upsert_entry(_entry(date(2026, 7, 1), "day one"))
+    db.upsert_entry(_entry(date(2026, 7, 2), "day two"))
+    profile = db.get_profile()
+
+    app = browse.BrowseApp(db, profile, key=None, start_date=date(2026, 7, 1))
+    async with app.run_test() as pilot:
+        await pilot.press("j")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 2)
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert app.current_date == date(2026, 7, 1)
+
+
+async def test_footer_shows_next_prev_list_edit_hints_in_detail_view(db):
+    db.create_profile(writing_goal=750)
+    db.upsert_entry(_entry(date(2026, 7, 1), "an entry"))
+    profile = db.get_profile()
+
+    app = browse.BrowseApp(db, profile, key=None, start_date=date(2026, 7, 1))
+    async with app.run_test(size=(100, 24)) as pilot:
+        await pilot.pause()
+        footer_text = app.export_screenshot(simplify=True)
+        for label in ("Next", "Prev", "List", "Edit", "Quit"):
+            assert label in footer_text
+
+
 async def test_list_command_returns_to_list_view(db):
     db.create_profile(writing_goal=750)
     db.upsert_entry(_entry(date(2026, 7, 1), "day one"))

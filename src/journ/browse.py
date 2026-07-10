@@ -23,11 +23,33 @@ from journ.db import Database
 from journ.models import Profile
 
 
+class _EntryList(OptionList):
+    # vim movement alongside the arrow keys OptionList already binds by default.
+    BINDINGS = [
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
+    ]
+
+
 class _EntryText(Static):
     # Static isn't focusable by default -- without this, focus silently stays on the (hidden)
     # OptionList in detail mode, which then intercepts up/down for its own cursor instead of
-    # letting them bubble up to the App's next/prev bindings.
+    # letting them bubble up to these bindings. Bindings live here rather than on the App so
+    # the Footer only shows next/prev/list/edit while this widget (i.e. the detail view) is
+    # actually focused, instead of all the time regardless of which view is showing.
     can_focus = True
+
+    BINDINGS = [
+        Binding("n", "app.next", "Next"),
+        Binding("down", "app.next", "Next", show=False),
+        Binding("j", "app.next", "Next", show=False),
+        Binding("p", "app.prev", "Prev"),
+        Binding("up", "app.prev", "Prev", show=False),
+        Binding("k", "app.prev", "Prev", show=False),
+        Binding("l", "app.back_to_list", "List"),
+        Binding("escape", "app.back_to_list", "List", show=False),
+        Binding("e", "app.edit", "Edit"),
+    ]
 
 
 def adjacent_entry_date(dates: list[date], current: date, step: int) -> date | None:
@@ -45,15 +67,11 @@ def adjacent_entry_date(dates: list[date], current: date, step: int) -> date | N
 class BrowseApp(App):
     ENABLE_COMMAND_PALETTE = False
 
+    # Quit is the only binding that always applies regardless of which view is focused --
+    # next/prev/list/edit live on _EntryText below so the Footer only shows them in detail view.
     BINDINGS = [
         Binding("q", "quit_browse", "Quit"),
-        Binding("escape", "escape_pressed", "Back/Quit", show=False),
-        Binding("n", "next", "Next", show=False),
-        Binding("down", "next", "Next", show=False),
-        Binding("p", "prev", "Prev", show=False),
-        Binding("up", "prev", "Prev", show=False),
-        Binding("l", "back_to_list", "List", show=False),
-        Binding("e", "edit", "Edit", show=False),
+        Binding("escape", "quit_browse", "Quit", show=False),
     ]
 
     CSS = """
@@ -84,7 +102,7 @@ class BrowseApp(App):
         self.current_date: date | None = None
 
     def compose(self) -> ComposeResult:
-        yield OptionList(id="entry-list")
+        yield _EntryList(id="entry-list")
         yield _EntryText(id="entry-text")
         yield Footer()
 
@@ -158,12 +176,6 @@ class BrowseApp(App):
     def action_back_to_list(self) -> None:
         if self.mode == "detail":
             self._show_list()
-
-    def action_escape_pressed(self) -> None:
-        if self.mode == "detail":
-            self._show_list()
-        else:
-            self.action_quit_browse()
 
     def action_edit(self) -> None:
         if self.mode != "detail" or self.current_date is None:
