@@ -104,9 +104,9 @@ class JournEditorApp(App):
 
     def _status_text(self, word_count: int) -> str:
         state = "goal met" if word_count >= self.writing_goal else "in progress"
-        private_segment = " -- \U0001f512 PRIVATE (ctrl+p to toggle)" if self.is_private else ""
-        date_segment = f"Editing {self.entry_date.isoformat()} -- " if self.entry_date else ""
-        return f"{date_segment}{word_count} / {self.writing_goal} words -- {state}{private_segment}"
+        private_segment = " | PRIVATE (ctrl+p to toggle)" if self.is_private else ""
+        date_segment = f"Editing {self.entry_date.isoformat()} | " if self.entry_date else ""
+        return f"{date_segment}{word_count} / {self.writing_goal} words | {state}{private_segment}"
 
     def action_save(self) -> None:
         self.result = EditorResult(

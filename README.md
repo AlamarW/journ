@@ -23,13 +23,13 @@ journ
 `uv tool install` builds journ into its own isolated environment and links the `journ`
 command into `uv`'s tool bin directory (`~/.local/bin` on Linux/macOS,
 `%APPDATA%\uv\bin` on Windows). If `journ` isn't found after installing, that directory
-probably isn't on your `PATH` yet — run `uv tool update-shell` to fix that, then restart your
+probably isn't on your `PATH` yet. Run `uv tool update-shell` to fix that, then restart your
 shell.
 
 To upgrade after pulling new changes: `uv tool install . --reinstall` from the repo directory.
 
 If you're contributing to journ itself rather than just using it, see
-[Development](#development) below instead — that runs it from the repo without a global
+[Development](#development) below instead, that runs it from the repo without a global
 install.
 
 `journ` also works on native Windows/PowerShell, not just WSL. On first run, if no `EDITOR`
@@ -41,30 +41,30 @@ for next time.
 
 journ opens today's entry in whatever `$EDITOR` (or `$env:EDITOR` on PowerShell) is set to.
 If it's unset, journ falls back to `nano` on macOS/Linux, or (on Windows only) offers an
-interactive picker the first time and remembers your choice afterward — see above. Run
+interactive picker the first time and remembers your choice afterward, see above. Run
 `journ editor` any time to see what's currently configured, or `journ editor set` to
-(re)pick — this works on any platform, not just the automatic Windows prompt.
+(re)pick. This works on any platform, not just the automatic Windows prompt.
 
 ### journ's built-in editor
 
-Tools like Notepad are fine text editors but have no idea you're journaling — no word count,
+Tools like Notepad are fine text editors but have no idea you're journaling: no word count,
 no sense of your daily goal. `journ editor set` offers journ's own built-in editor as an
 option on every platform (Windows, WSL/Linux, and macOS): a minimal, distraction-free,
 full-screen text area with a live word count and goal indicator in the footer.
 <kbd>Ctrl+W</kbd> saves and exits, <kbd>Esc</kbd> (or <kbd>Ctrl+Q</kbd>) discards and exits. It's also the only
-editor option where your entry never touches disk in plaintext — the external-editor path
+editor option where your entry never touches disk in plaintext. The external-editor path
 below still needs a real temp file for your editor to open, but the built-in editor holds
 your entry in memory and encrypts it directly.
 
 To set it yourself:
 
 ```sh
-# bash / zsh — add to ~/.bashrc or ~/.zshrc
+# bash / zsh, add to ~/.bashrc or ~/.zshrc
 export EDITOR="nvim"
 ```
 
 ```powershell
-# PowerShell — add to your $PROFILE to persist it
+# PowerShell, add to your $PROFILE to persist it
 $env:EDITOR = "code --wait"
 ```
 
@@ -127,16 +127,16 @@ passphrase.
 ### Analytics, and what needs your passphrase
 
 `calendar`, `trends`, `records`, `patterns`, `streak`, `stats`, and `suggest` work from
-metadata alone (word counts, dates, timing) -- they never prompt for your passphrase, even
+metadata alone (word counts, dates, timing); they never prompt for your passphrase, even
 on an encrypted journal. `frequency`, `search`, `export`, and `on-this-day` need the actual
 entry text, so they decrypt on demand and do prompt.
 
 Milestones (word-count, entry-count, and streak thresholds) are surfaced automatically as
-part of the `write` summary when you cross one -- there's no separate command for these.
+part of the `write` summary when you cross one. There's no separate command for these.
 
 ## Your entries, protected
 
-journ runs entirely on your machine — there's no account system and no server. If you set a
+journ runs entirely on your machine, there's no account system and no server. If you set a
 passphrase, it doesn't just gate access to the app: a key derived from it (PBKDF2-HMAC-SHA256
 + Fernet/AES) actually encrypts your entry text before it's written to
 `~/.journ/journal.db`. Anyone reading the raw database file without your passphrase sees only
@@ -145,7 +145,7 @@ sensitive on its own (streak, writing goal, entry dates) is stored unencrypted.
 
 The one exposure, if you use an external editor: while it has today's entry open, it's
 sitting in a plaintext temp file under `~/.journ/tmp`, deleted as soon as you close the
-editor — external editors need a real file on disk to edit. journ's built-in editor
+editor. External editors need a real file on disk to edit. journ's built-in editor
 (`journ editor set`) doesn't have this exposure at all; it holds the entry in memory only.
 
 `journ export` writes a plaintext file by design (that's the point of exporting), so on an

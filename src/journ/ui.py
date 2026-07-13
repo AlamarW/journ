@@ -60,7 +60,7 @@ def _format_milestone(kind: str, threshold: int) -> str:
         label = f"{threshold}-day streak"
     else:
         label = f"{kind} {threshold}"
-    return f"[bold magenta]\U0001f389 Milestone: {label}![/bold magenta]"
+    return f"[bold magenta]Milestone: {label}![/bold magenta]"
 
 
 def print_write_summary(
@@ -80,11 +80,11 @@ def print_write_summary(
     lines = []
     if goal_met:
         lines.append(
-            f"[bold green]✓[/bold green] {word_count} words -- over your goal of {writing_goal}!"
+            f"[bold green]✓[/bold green] {word_count} words, over your goal of {writing_goal}!"
         )
     else:
         lines.append(
-            f"[bold yellow]○[/bold yellow] {word_count} words -- under your goal of {writing_goal}"
+            f"[bold yellow]○[/bold yellow] {word_count} words, under your goal of {writing_goal}"
         )
     lines.append(f"Journalled for {format_elapsed(elapsed)}, {words_per_minute} words/minute")
     if streak_changed:
@@ -117,11 +117,11 @@ def print_edit_summary(
     lines = [f"{action} entry for {entry_date.isoformat()}"]
     if goal_met:
         lines.append(
-            f"[bold green]✓[/bold green] {word_count} words -- over your goal of {writing_goal}!"
+            f"[bold green]✓[/bold green] {word_count} words, over your goal of {writing_goal}!"
         )
     else:
         lines.append(
-            f"[bold yellow]○[/bold yellow] {word_count} words -- under your goal of {writing_goal}"
+            f"[bold yellow]○[/bold yellow] {word_count} words, under your goal of {writing_goal}"
         )
 
     if streak_changed:
@@ -150,9 +150,9 @@ def print_stats_table(*, avg_wpm: float, total_words: int, entry_count: int) -> 
 
 def print_streak_line(streak: int) -> None:
     if streak > 0:
-        console.print(f"[bold cyan]\U0001f525 Streak: {streak} day(s)[/bold cyan]")
+        console.print(f"[bold cyan]Streak: {streak} day(s)[/bold cyan]")
     else:
-        console.print("No streak yet -- write today's entry to start one.")
+        console.print("No streak yet. Write today's entry to start one.")
 
 
 def print_calendar(grid: list[list[analytics.CalendarDay]], consistency: float) -> None:
@@ -212,7 +212,7 @@ def print_records(records: analytics.Records | None) -> None:
 def print_patterns(pattern: analytics.PatternSummary) -> None:
     if not any(pattern.by_day_of_week.values()):
         console.print(
-            "Not enough data yet -- writing-pattern insights only cover entries "
+            "Not enough data yet. Writing-pattern insights only cover entries "
             "written since this feature was added."
         )
         return

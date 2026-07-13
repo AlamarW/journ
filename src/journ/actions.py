@@ -195,7 +195,7 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
         # plaintext to disk.
         result = run_builtin_editor(existing_text, profile.writing_goal, initial_private)
         if result is None:
-            print("Discarded -- no changes saved.")
+            print("Discarded. No changes saved.")
             return
         text = result.text
         is_private = result.private
@@ -317,7 +317,7 @@ def edit_entry(db: Database, entry_date: date, private: bool | None = None) -> N
             existing_text, profile.writing_goal, initial_private, entry_date=entry_date
         )
         if result is None:
-            print("Discarded -- no changes saved.")
+            print("Discarded. No changes saved.")
             return
         text = result.text
         is_private = result.private
@@ -450,7 +450,7 @@ def save_conversation_entry(
         profile = db.get_profile()
         if profile is None:
             raise ValueError(
-                "No profile exists yet -- run `journ` once to finish first-time setup."
+                "No profile exists yet. Run `journ` once to finish first-time setup."
             )
 
         existing = db.get_entry(entry_date)
@@ -603,9 +603,9 @@ def manage_editor(reconfigure: bool) -> None:
         return
 
     if os.name == "nt":
-        print("Not configured yet -- you'll be prompted to pick one the next time you write.")
+        print("Not configured yet. You'll be prompted to pick one the next time you write.")
     else:
-        print("Currently using: nano (default -- no EDITOR set or saved choice)")
+        print("Currently using: nano (default, no EDITOR set or saved choice)")
     print("Run `journ editor set` to choose (including journ's built-in editor).")
 
 
@@ -662,7 +662,7 @@ def mcp_unlock(db: Database) -> None:
     profile, _key = ensure_profile(db)
     if not profile.has_passphrase:
         print(
-            "This journal has no passphrase -- nothing to cache. `journ mcp serve --content` "
+            "This journal has no passphrase, nothing to cache. `journ mcp serve --content` "
             "will work without unlocking."
         )
         return
@@ -672,7 +672,7 @@ def mcp_unlock(db: Database) -> None:
     except mcp_keychain.KeychainError as exc:
         print(f"Could not cache the key: {exc}")
         return
-    print("Key cached indefinitely in your OS credential store -- run `journ mcp lock` when done.")
+    print("Key cached indefinitely in your OS credential store. Run `journ mcp lock` when done.")
 
 
 def mcp_lock() -> None:
@@ -937,7 +937,7 @@ def export_journal(
         return
     entries = filter_private(all_entries, include_private)
     if not entries:
-        print("All your entries are private -- pass --include-private to export them anyway.")
+        print("All your entries are private. Pass --include-private to export them anyway.")
         return
 
     if profile.has_passphrase:

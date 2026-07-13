@@ -60,7 +60,7 @@ def main(ctx: typer.Context) -> None:
 
 @app.command()
 def shell() -> None:
-    """Open the interactive (journ) shell -- the default when run with no subcommand."""
+    """Open the interactive (journ) shell, the default when run with no subcommand."""
     _open_shell()
 
 
