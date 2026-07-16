@@ -278,6 +278,12 @@ def print_goal_suggestion(*, current_goal: int, suggested: int | None) -> None:
             f"Your current goal ({current_goal} words) already fits your recent writing well."
         )
         return
+    if current_goal == 0:
+        console.print(
+            f"Based on your recent entries, consider setting your goal to "
+            f"[bold]{suggested}[/bold] words. Run `journ goal {suggested}` to apply it."
+        )
+        return
     direction = "up" if suggested > current_goal else "down"
     console.print(
         f"Based on your recent entries, consider adjusting your goal {direction} from "

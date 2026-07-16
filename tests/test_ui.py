@@ -21,3 +21,18 @@ def test_stats_table_has_no_ansi_when_non_tty(capsys):
     output = capsys.readouterr().out
     assert "\x1b[" not in output
     assert "Total words written" in output
+
+
+def test_goal_suggestion_with_no_current_goal_suggests_setting_it(capsys):
+    ui.print_goal_suggestion(current_goal=0, suggested=250)
+    output = capsys.readouterr().out
+    assert "consider setting your goal to" in output
+    assert "250" in output
+    assert "adjusting" not in output
+
+
+def test_goal_suggestion_with_current_goal_suggests_adjusting(capsys):
+    ui.print_goal_suggestion(current_goal=200, suggested=250)
+    output = capsys.readouterr().out
+    assert "consider adjusting your goal up from 200 to" in output
+    assert "250" in output
