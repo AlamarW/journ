@@ -13,7 +13,8 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "journal_filepath", tmp_path / ".journ" / "journal.db")
     monkeypatch.setattr(config, "journ_tmp_dir", tmp_path / ".journ" / "tmp")
     monkeypatch.setattr(config, "editor_config_filepath", tmp_path / ".journ" / "editor.cfg")
-    monkeypatch.setenv("EDITOR", f"{sys.executable} {STUB_EDITOR}")
+    stub_editor = _write_stub_editor(tmp_path)
+    monkeypatch.setenv("EDITOR", f"{sys.executable} {stub_editor}")
 
 
 def _write_stub_editor(tmp_path):
@@ -27,8 +28,6 @@ def _write_stub_editor(tmp_path):
 
 
 def test_write_then_stats_and_streak(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
 
     # first-run profile setup: goal, then decline passphrase
@@ -46,8 +45,6 @@ def test_write_then_stats_and_streak(tmp_path, monkeypatch):
 
 
 def test_goal_show_and_set(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
 
     result = runner.invoke(cli.app, ["goal"], input="750\nn\n")
@@ -62,8 +59,6 @@ def test_goal_show_and_set(tmp_path, monkeypatch):
 def test_stats_output_has_no_raw_ansi_codes_when_piped(tmp_path, monkeypatch):
     # CliRunner captures output as a non-TTY stream; rich.Console must auto-detect that and
     # skip styling, so scripted/piped use of one-shot commands stays clean, parseable text.
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
 
     runner.invoke(cli.app, ["write"], input="5\nn\n")
@@ -95,8 +90,6 @@ def test_editor_show_then_set_builtin(tmp_path, monkeypatch):
 
 
 def test_metadata_analytics_commands_smoke(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
 
     result = runner.invoke(cli.app, ["write"], input="5\nn\n")
@@ -115,8 +108,6 @@ def test_metadata_analytics_commands_smoke(tmp_path, monkeypatch):
 
 
 def test_content_commands_smoke_on_unencrypted_journal(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
 
     runner.invoke(cli.app, ["write"], input="5\nn\n")
@@ -144,8 +135,6 @@ def test_content_commands_smoke_on_unencrypted_journal(tmp_path, monkeypatch):
 
 
 def test_export_rejects_unknown_format(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
     runner.invoke(cli.app, ["write"], input="5\nn\n")
 
@@ -156,8 +145,6 @@ def test_export_rejects_unknown_format(tmp_path, monkeypatch):
 
 
 def test_export_include_private_flag(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
     runner.invoke(cli.app, ["write", "--private"], input="5\nn\n")
 
@@ -176,8 +163,6 @@ def test_export_include_private_flag(tmp_path, monkeypatch):
 
 
 def test_write_private_flag_marks_new_entry_private(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
 
     result = runner.invoke(cli.app, ["write", "--private"], input="5\nn\n")
@@ -195,8 +180,6 @@ def test_write_rejects_both_private_and_unprivate(tmp_path, monkeypatch):
 
 
 def test_private_command_marks_and_unmarks_entry(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
     runner.invoke(cli.app, ["write"], input="5\nn\n")
 
@@ -212,8 +195,6 @@ def test_private_command_marks_and_unmarks_entry(tmp_path, monkeypatch):
 
 
 def test_edit_command_backfills_past_day_and_prints_date_banner(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
     runner.invoke(cli.app, ["write"], input="5\nn\n")  # first-run profile setup
 
@@ -226,8 +207,6 @@ def test_edit_command_backfills_past_day_and_prints_date_banner(tmp_path, monkey
 
 
 def test_edit_command_rejects_editing_today(tmp_path, monkeypatch):
-    global STUB_EDITOR
-    STUB_EDITOR = _write_stub_editor(tmp_path)
     _isolate(tmp_path, monkeypatch)
     runner.invoke(cli.app, ["write"], input="5\nn\n")
 
