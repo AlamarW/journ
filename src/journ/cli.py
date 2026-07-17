@@ -27,7 +27,14 @@ app.add_typer(passphrase_app, name="passphrase")
 editor_app = typer.Typer(help="Show or change the editor journ uses.")
 app.add_typer(editor_app, name="editor")
 
-mcp_app = typer.Typer(help="Run journ as an MCP server for LLM clients, and manage the cached key.")
+mcp_app = typer.Typer(
+    help=(
+        "Run journ as an MCP server for LLM clients, and manage the cached key. "
+        "Tier 1 (metadata/stats) is exposed by default; `serve --content` adds "
+        "Tier 2 (read/write entry text), and `--private` extends Tier 2 to "
+        "private entries."
+    )
+)
 app.add_typer(mcp_app, name="mcp")
 
 
