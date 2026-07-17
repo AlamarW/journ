@@ -913,6 +913,21 @@ def get_entry_by_date(
     return decrypted[0] if decrypted else None
 
 
+def get_recent_entries(
+    db: Database,
+    profile: Profile,
+    key: bytes | None,
+    n: int = 5,
+    entries: list[JournalEntry] | None = None,
+) -> list[DecryptedEntry]:
+    """The N most recently written visible entries, newest first. db.all_entries() is
+    ascending by date, so the last n are the most recent -- reverse for newest-first."""
+    if entries is None:
+        entries = filter_private(db.all_entries(), include_private=False)
+    recent = entries[-n:][::-1] if n > 0 else []
+    return all_decrypted(db, profile, key, entries=recent)
+
+
 def set_private(db: Database, entry_date: date, private: bool) -> None:
     entry = db.get_entry(entry_date)
     if entry is None:

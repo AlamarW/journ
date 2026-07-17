@@ -657,6 +657,48 @@ def test_get_entry_by_date_returns_none_for_missing_date(db):
     assert result is None
 
 
+def test_get_recent_entries_returns_newest_first_limited_to_n(db):
+    db.create_profile(writing_goal=750)
+    for i, text in enumerate([b"first", b"second", b"third"]):
+        db.upsert_entry(
+            JournalEntry(
+                entry_date=date(2026, 7, i + 1),
+                content=text,
+                is_encrypted=False,
+                words_per_minute=None,
+                accomplished_goal=False,
+                updated_at="x",
+                word_count=1,
+            )
+        )
+    profile = db.get_profile()
+
+    result = actions.get_recent_entries(db, profile, key=None, n=2)
+
+    assert [e.entry_date for e in result] == [date(2026, 7, 3), date(2026, 7, 2)]
+    assert result[0].text == "third"
+
+
+def test_get_recent_entries_excludes_private_by_default(db, monkeypatch):
+    db.create_profile(writing_goal=750)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1),
+            content=b"secret",
+            is_encrypted=False,
+            words_per_minute=None,
+            accomplished_goal=False,
+            updated_at="x",
+            private=True,
+        )
+    )
+    profile = db.get_profile()
+    _forbid_unlock(monkeypatch)  # a hidden private entry must never trigger a decrypt attempt
+
+    result = actions.get_recent_entries(db, profile, key=None, n=5)
+    assert result == []
+
+
 def test_set_private_marks_and_unmarks_via_action(db, capsys):
     db.upsert_entry(
         JournalEntry(

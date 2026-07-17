@@ -5,8 +5,9 @@ streak, goal, stats-totals -- all zero-decryption, backed by db.all_entries()/ge
 plus analytics.py.
 
 Tier 2 (content read+write, only registered when content=True): search, word-frequency,
-on-this-day, get-entry-by-date, save-conversation-entry. Gated by not even calling add_tool
-for these when content=False, so a client without content access never sees they exist.
+on-this-day, recent-entries, get-entry-by-date, save-conversation-entry. Gated by not even
+calling add_tool for these when content=False, so a client without content access never sees
+they exist.
 
 Tier 3 (private, private=True): modifies Tier-2 read tool behavior (include_private=True);
 does not add or remove any tools.
@@ -163,6 +164,11 @@ def _register_tier2_tools(
         matches = actions.on_this_day_matches(entries)
         return _to_json(actions.get_on_this_day(db, profile, key, entries=matches))
 
+    def get_recent_entries(n: int = 5) -> str:
+        """The N most recently written visible entries, newest first."""
+        entries = actions.filter_private(db.all_entries(), include_private)
+        return _to_json(actions.get_recent_entries(db, profile, key, n=n, entries=entries))
+
     def get_entry_by_date(entry_date: str) -> str:
         """Full decrypted text of the entry for a given ISO date (YYYY-MM-DD), if it exists
         and is visible. Returns null if there's no entry, or if it's flagged private and
@@ -193,6 +199,7 @@ def _register_tier2_tools(
         (search_journal, "search_journal"),
         (get_word_frequency, "get_word_frequency"),
         (get_on_this_day, "get_on_this_day"),
+        (get_recent_entries, "get_recent_entries"),
         (get_entry_by_date, "get_entry_by_date"),
         (save_conversation_entry, "save_conversation_entry"),
     ]:

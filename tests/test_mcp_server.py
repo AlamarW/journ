@@ -11,7 +11,7 @@ _TIER1_TOOLS = {
     "get_goal_suggestion", "get_streak", "get_goal", "get_stats_totals",
 }
 _TIER2_TOOLS = {
-    "search_journal", "get_word_frequency", "get_on_this_day",
+    "search_journal", "get_word_frequency", "get_on_this_day", "get_recent_entries",
     "get_entry_by_date", "save_conversation_entry",
 }
 
@@ -141,6 +141,38 @@ async def test_get_entry_by_date_tool_respects_private_flag(db):
     )
     payload = json.loads(content_blocks[0].text)
     assert payload["text"] == "secret"
+
+
+async def test_call_get_recent_entries_tool_end_to_end(db):
+    db.create_profile(writing_goal=1)
+    for i, text in enumerate([b"first entry", b"second entry", b"third entry"]):
+        db.upsert_entry(
+            JournalEntry(
+                entry_date=date(2026, 7, i + 1), content=text, is_encrypted=False,
+                words_per_minute=None, accomplished_goal=True, updated_at="x", word_count=2,
+            )
+        )
+    server = mcp_server.build_server(db, content=True, private=False)
+
+    content_blocks, _ = await server.call_tool("get_recent_entries", {"n": 2})
+    payload = json.loads(content_blocks[0].text)
+    assert [e["entry_date"] for e in payload] == ["2026-07-03", "2026-07-02"]
+    assert payload[0]["text"] == "third entry"
+
+
+async def test_get_recent_entries_excludes_private_entries_by_default(db):
+    db.create_profile(writing_goal=1)
+    db.upsert_entry(
+        JournalEntry(
+            entry_date=date(2026, 7, 1), content=b"secret", is_encrypted=False,
+            words_per_minute=None, accomplished_goal=False, updated_at="x", word_count=1,
+            private=True,
+        )
+    )
+    server = mcp_server.build_server(db, content=True, private=False)
+
+    content_blocks, _ = await server.call_tool("get_recent_entries", {"n": 5})
+    assert json.loads(content_blocks[0].text) == []
 
 
 async def test_search_journal_excludes_private_entries_by_default(db):
