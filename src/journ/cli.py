@@ -292,13 +292,27 @@ def mcp_status() -> None:
 @mcp_app.command("serve")
 def mcp_serve(
     content: bool = typer.Option(
-        False, "--content", help="Enable Tier 2 content tools (search/read/save entries)."
+        False,
+        "--content",
+        help=(
+            "Expose Tier 2 tools that read/write entry text (search, read, save). "
+            "Without this, only metadata/stats tools are available."
+        ),
     ),
     mcp_private: bool = typer.Option(
-        False, "--private", help="Include private entries in Tier 2 tools (requires --content)."
+        False,
+        "--private",
+        help=(
+            "Also expose entries flagged private through Tier 2 tools. Requires "
+            "--content; private entries are excluded otherwise."
+        ),
     ),
 ) -> None:
-    """Start journ's MCP server over stdio, for use with an MCP-capable LLM client."""
+    """Start journ's MCP server over stdio, for use with an MCP-capable LLM client.
+
+    By default only Tier 1 metadata tools are exposed; use --content and --private
+    to add more.
+    """
     from journ.mcp_server import MCPStartupError, run_server
 
     if mcp_private and not content:
