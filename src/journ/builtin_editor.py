@@ -45,6 +45,10 @@ class JournEditorApp(App):
         background: $success;
         color: $text;
     }
+    #status.confirm {
+        background: $error;
+        color: $text;
+    }
     """
 
     # ctrl+s is deliberately avoided -- on Windows it collides with pyreadline3's
@@ -80,6 +84,7 @@ class JournEditorApp(App):
         self.is_private = initial_private
         self.entry_date = entry_date
         self.result: EditorResult | None = None
+        self._confirm_discard = False
 
     def compose(self) -> ComposeResult:
         yield Static(self._status_text(count_words(self.initial_text)), id="status")
@@ -97,10 +102,12 @@ class JournEditorApp(App):
         )
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        self._confirm_discard = False
         word_count = count_words(event.text_area.text)
         status = self.query_one("#status", Static)
         status.update(self._status_text(word_count))
         status.set_class(word_count >= self.writing_goal, "goal-met")
+        status.set_class(False, "confirm")
 
     def _status_text(self, word_count: int) -> str:
         state = "goal met" if word_count >= self.writing_goal else "in progress"
@@ -115,14 +122,32 @@ class JournEditorApp(App):
         self.exit()
 
     def action_cancel(self) -> None:
-        self.result = None
-        self.exit()
+        """Discard & exit -- but discarding UNSAVED CHANGES takes a second confirming
+        press: ctrl+q sits right next to ctrl+w, and one mistyped discard once cost a
+        real 600-word session (in stet, journ's sibling, which inherited this editor).
+        A clean editor still exits on the first press. Any deliberate action in between
+        (typing, toggling private, saving) cancels the pending discard. ctrl+q must stay
+        bound regardless: Textual's own default for it is quit-without-confirming."""
+        text = self.query_one("#entry", TextArea).text
+        if text == self.initial_text or self._confirm_discard:
+            self.result = None
+            self.exit()
+            return
+        self._confirm_discard = True
+        status = self.query_one("#status", Static)
+        status.update("Unsaved changes -- press again to discard, ctrl+w to save")
+        status.set_class(False, "goal-met")
+        status.set_class(True, "confirm")
 
     def action_toggle_private(self) -> None:
         self.is_private = not self.is_private
+        self._confirm_discard = False
         text_area = self.query_one("#entry", TextArea)
+        word_count = count_words(text_area.text)
         status = self.query_one("#status", Static)
-        status.update(self._status_text(count_words(text_area.text)))
+        status.update(self._status_text(word_count))
+        status.set_class(word_count >= self.writing_goal, "goal-met")
+        status.set_class(False, "confirm")
 
 
 def run_builtin_editor(

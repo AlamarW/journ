@@ -14,24 +14,89 @@ async def test_save_appends_at_cursor_end_not_start():
     assert app.result.private is False
 
 
-async def test_escape_discards_changes():
+async def test_escape_with_no_changes_exits_immediately():
     app = JournEditorApp("existing text", writing_goal=100)
     async with app.run_test() as pilot:
-        await pilot.press(*"more")
         await pilot.press("escape")
         await pilot.pause()
 
     assert app.result is None
 
 
-async def test_ctrl_q_discards_changes_same_as_escape():
+async def test_escape_with_changes_needs_a_second_press():
+    app = JournEditorApp("existing text", writing_goal=100)
+    async with app.run_test() as pilot:
+        await pilot.press(*"more")
+        await pilot.press("escape")
+        await pilot.pause()
+
+        # First press warns and stays.
+        status = app.query_one("#status")
+        assert "Unsaved changes" in str(status.render())
+        assert "confirm" in status.classes
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+    assert app.result is None
+
+
+async def test_ctrl_q_shares_the_confirmation_with_escape():
     app = JournEditorApp("existing text", writing_goal=100)
     async with app.run_test() as pilot:
         await pilot.press(*"more")
         await pilot.press("ctrl+q")
         await pilot.pause()
+        assert "confirm" in app.query_one("#status").classes
+
+        await pilot.press("escape")
+        await pilot.pause()
 
     assert app.result is None
+
+
+async def test_typing_cancels_pending_discard():
+    app = JournEditorApp("existing text", writing_goal=100)
+    async with app.run_test() as pilot:
+        await pilot.press(*"more")
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("x")
+        await pilot.pause()
+
+        status = app.query_one("#status")
+        assert "Unsaved changes" not in str(status.render())
+        assert "confirm" not in status.classes
+
+        # A single escape must warn again rather than exit.
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.result is None
+        assert "confirm" in status.classes
+
+
+async def test_private_toggle_cancels_pending_discard():
+    app = JournEditorApp("existing text", writing_goal=100)
+    async with app.run_test() as pilot:
+        await pilot.press(*"more")
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("ctrl+p")
+        await pilot.pause()
+
+        assert "confirm" not in app.query_one("#status").classes
+        assert app.is_private is True
+
+
+async def test_ctrl_w_saves_even_while_confirmation_pending():
+    app = JournEditorApp("existing text", writing_goal=100)
+    async with app.run_test() as pilot:
+        await pilot.press(*" more")
+        await pilot.press("escape")
+        await pilot.press("ctrl+w")
+        await pilot.pause()
+
+    assert app.result.text == "existing text more"
 
 
 async def test_status_reflects_live_word_count_and_goal_state():
