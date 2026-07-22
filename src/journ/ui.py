@@ -19,6 +19,21 @@ from journ.content import DecryptedEntry
 
 console = Console()
 
+# One-shot CLI messages suggest full commands (`journ goal 750`); inside the (journ) shell
+# the prefix would be wrong to type, so _open_shell flips it off for the process lifetime.
+_command_prefix = "journ "
+
+
+def set_shell_mode(enabled: bool) -> None:
+    global _command_prefix
+    _command_prefix = "" if enabled else "journ "
+
+
+def cmd(text: str) -> str:
+    """A suggested command, rendered the way the user should actually type it."""
+    return _command_prefix + text
+
+
 _DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # Verified for exact column alignment -- see the banner box math in _BANNER below.
@@ -281,14 +296,14 @@ def print_goal_suggestion(*, current_goal: int, suggested: int | None) -> None:
     if current_goal == 0:
         console.print(
             f"Based on your recent entries, consider setting your goal to "
-            f"[bold]{suggested}[/bold] words. Run `journ goal {suggested}` to apply it."
+            f"[bold]{suggested}[/bold] words. Run `{cmd(f'goal {suggested}')}` to apply it."
         )
         return
     direction = "up" if suggested > current_goal else "down"
     console.print(
         f"Based on your recent entries, consider adjusting your goal {direction} from "
-        f"{current_goal} to [bold]{suggested}[/bold] words. Run `journ goal {suggested}` "
-        "to apply it."
+        f"{current_goal} to [bold]{suggested}[/bold] words. "
+        f"Run `{cmd(f'goal {suggested}')}` to apply it."
     )
 
 

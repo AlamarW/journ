@@ -83,20 +83,22 @@ def get_editor() -> str:
     if saved_editor:
         return saved_editor
 
+    from journ import ui  # local import: config stays importable without the Rich stack
+
     if os.name == "nt":
         print("No EDITOR environment variable is set.")
         chosen_editor = prompt_editor_choice()
         save_editor_choice(chosen_editor)
         label = "journ's built-in editor" if chosen_editor == BUILTIN_EDITOR else chosen_editor
         print(
-            f"Using {label} going forward. Change it anytime with `journ editor set`, by "
+            f"Using {label} going forward. Change it anytime with `{ui.cmd('editor set')}`, by "
             f"setting $env:EDITOR, or by deleting {editor_config_filepath}\n"
         )
         return chosen_editor
 
     print(
         "No EDITOR environment variable set, defaulting to 'nano'. Set EDITOR to use a "
-        "different editor, or run `journ editor set` to pick one (including journ's "
+        f"different editor, or run `{ui.cmd('editor set')}` to pick one (including journ's "
         "built-in editor)."
     )
     return "nano"

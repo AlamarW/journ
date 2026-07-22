@@ -606,7 +606,7 @@ def manage_editor(reconfigure: bool) -> None:
         print("Not configured yet. You'll be prompted to pick one the next time you write.")
     else:
         print("Currently using: nano (default, no EDITOR set or saved choice)")
-    print("Run `journ editor set` to choose (including journ's built-in editor).")
+    print(f"Run `{ui.cmd('editor set')}` to choose (including journ's built-in editor).")
 
 
 def manage_passphrase(db: Database, action: str) -> None:

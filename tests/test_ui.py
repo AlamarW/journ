@@ -36,3 +36,23 @@ def test_goal_suggestion_with_current_goal_suggests_adjusting(capsys):
     output = capsys.readouterr().out
     assert "consider adjusting your goal up from 200 to" in output
     assert "250" in output
+
+
+def test_cli_mode_prefixes_suggestions():
+    assert ui.cmd("goal 750") == "journ goal 750"
+
+
+def test_shell_mode_drops_prefix(monkeypatch):
+    monkeypatch.setattr(ui, "_command_prefix", "")
+    assert ui.cmd("goal 750") == "goal 750"
+
+
+def test_goal_suggestion_message_follows_shell_mode(monkeypatch, capsys):
+    ui.print_goal_suggestion(current_goal=500, suggested=750)
+    assert "journ goal 750" in capsys.readouterr().out
+
+    monkeypatch.setattr(ui, "_command_prefix", "")
+    ui.print_goal_suggestion(current_goal=500, suggested=750)
+    output = capsys.readouterr().out
+    assert "`goal 750`" in output
+    assert "journ goal" not in output

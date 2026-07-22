@@ -51,6 +51,7 @@ def _run(action_fn) -> None:
 
 
 def _open_shell() -> None:
+    ui.set_shell_mode(True)
     with _open_db() as db:
         clear_screen()
         actions.ensure_profile(db)
