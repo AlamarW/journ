@@ -53,10 +53,13 @@ option on every platform (Windows, WSL/Linux, and macOS): a minimal, distraction
 full-screen text area with a live word count and goal indicator in the footer.
 <kbd>Ctrl+W</kbd> saves and exits, <kbd>Esc</kbd> (or <kbd>Ctrl+Q</kbd>) discards and exits;
 if you have unsaved changes, discarding asks for a second press first so a mistyped
-<kbd>Ctrl+Q</kbd> can't silently throw away your entry. It's also the only
-editor option where your entry never touches disk in plaintext. The external-editor path
-below still needs a real temp file for your editor to open, but the built-in editor holds
-your entry in memory and encrypts it directly.
+<kbd>Ctrl+Q</kbd> can't silently throw away your entry. Even a confirmed discard keeps a
+recovery copy in `~/.journ/discarded/` -- encrypted with your passphrase if you have one
+set, so it is never a plaintext copy of an encrypted journal. `journ recover` lists what
+was kept and prints one back. It's also the only editor option where your entry never
+touches disk in plaintext. The external-editor path below still needs a real temp file for
+your editor to open, but the built-in editor holds your entry in memory and encrypts it
+directly.
 
 To set it yourself:
 
@@ -110,6 +113,7 @@ the shell just to check something:
 | `journ stats`                           | Average words-per-minute and total words written         |
 | `journ streak`                          | Current streak                                           |
 | `journ last`                            | Word count of your most recent entry                     |
+| `journ recover [n]`                     | List text kept from discarded editor sessions, or read one |
 | `journ goal` / `journ goal 750`         | Show or set your daily writing goal                       |
 | `journ editor` / `journ editor set`     | Show or (re)pick your editor, including the built-in one  |
 | `journ passphrase set/change/remove`    | Manage the passphrase that encrypts your entries          |
