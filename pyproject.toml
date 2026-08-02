@@ -17,12 +17,11 @@ dependencies = [
     "quire",
 ]
 
-# TODO: switch to { git = "https://github.com/AlamarW/quire", tag = "vX.Y.Z" } once quire
-# has a remote. This MUST happen before this branch is merged or pushed: journ is public,
-# and a path source breaks the `git clone && uv tool install .` path in journ's own README
-# for anyone who does not also have quire checked out beside it.
+# Pinned to a tag rather than a branch so the `git clone && uv tool install .` path in the
+# README resolves the same quire for everyone. For local development against an unreleased
+# quire, override this with: quire = { path = "../quire", editable = true }
 [tool.uv.sources]
-quire = { path = "../quire", editable = true }
+quire = { git = "https://github.com/AlamarW/quire", tag = "v0.1.0" }
 
 [project.urls]
 Homepage = "https://github.com/AlamarW/journ"
