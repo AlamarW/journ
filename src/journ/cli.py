@@ -9,12 +9,12 @@ from datetime import date
 from pathlib import Path
 
 import typer
+from quire.terminal import clear_screen
 
 from journ import actions, browse, config, ui
 from journ.actions import PassphraseError
 from journ.db import Database
 from journ.shell import JournalingShell
-from journ.terminal import clear_screen
 
 app = typer.Typer(
     help="A terminal journaling tool that honors your text editor of choice.",
@@ -212,6 +212,17 @@ def on_this_day() -> None:
     """Show entries written on this date in previous years."""
     with _open_db() as db:
         _run(lambda: actions.show_on_this_day(db))
+
+
+@app.command()
+def recover(
+    which: int = typer.Argument(
+        None, help="Which discarded text to print, as numbered by a bare `journ recover`."
+    ),
+) -> None:
+    """List text kept from discarded editor sessions, or print one."""
+    with _open_db() as db:
+        _run(lambda: actions.recover_discarded(db, which))
 
 
 @app.command()

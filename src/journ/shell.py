@@ -10,15 +10,16 @@ from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
+from quire.terminal import clear_screen
+
 from journ import actions, browse, ui
 from journ.actions import PassphraseError
 from journ.db import Database
-from journ.terminal import clear_screen
 
 # Grouped for the custom `help` overview -- deliberately excludes the do_journ/do_EOF
 # aliases, which exist for backward compatibility and Ctrl+D but would just be noise here.
 _HELP_GROUPS = [
-    ("Write", ["write", "edit", "read", "private", "stats", "streak", "last", "goal"]),
+    ("Write", ["write", "edit", "read", "private", "recover", "stats", "streak", "last", "goal"]),
     (
         "Analytics",
         [
@@ -178,6 +179,17 @@ class JournalingShell(cmd.Cmd):
     def do_frequency(self, line):
         "Show your most-used words across all entries"
         self._run(lambda: actions.show_word_frequency(self.db))
+
+    def do_recover(self, line):
+        "Text kept from discarded editor sessions: 'recover' to list, 'recover 1' to read"
+        arg = line.strip()
+        if not arg:
+            self._run(lambda: actions.recover_discarded(self.db))
+            return
+        if not arg.isdigit():
+            print("Usage: recover  |  recover <n>")
+            return
+        self._run(lambda: actions.recover_discarded(self.db, int(arg)))
 
     def do_search(self, line):
         "Search your entries for a word or phrase: 'search some phrase'"

@@ -14,7 +14,15 @@ dependencies = [
     "mcp>=1.28.1",
     "keyring>=25.7.0",
     "stop-words>=2018.7.23",
+    "quire",
 ]
+
+# TODO: switch to { git = "https://github.com/AlamarW/quire", tag = "vX.Y.Z" } once quire
+# has a remote. This MUST happen before this branch is merged or pushed: journ is public,
+# and a path source breaks the `git clone && uv tool install .` path in journ's own README
+# for anyone who does not also have quire checked out beside it.
+[tool.uv.sources]
+quire = { path = "../quire", editable = true }
 
 [project.urls]
 Homepage = "https://github.com/AlamarW/journ"

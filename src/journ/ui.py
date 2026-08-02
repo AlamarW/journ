@@ -9,8 +9,10 @@ commands still gets clean, parseable plain text.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -90,7 +92,7 @@ def print_write_summary(
     milestones: list[tuple[str, int]] = (),
     private: bool = False,
 ) -> None:
-    from journ.words import format_elapsed
+    from quire.words import format_elapsed
 
     lines = []
     if goal_met:
@@ -321,3 +323,25 @@ def print_repl_help(groups: list[tuple[str, list[tuple[str, str]]]]) -> None:
 
     console.print(table)
     console.print("\nType [bold]help <command>[/bold] for more detail on a specific command.")
+
+
+def print_discarded_listing(stashes: list[Path]) -> None:
+    console.print("Discarded text kept for recovery, newest first:")
+    table = Table(show_header=True, header_style="bold", box=None)
+    table.add_column("", justify="right", style="bold")
+    table.add_column("from")
+    table.add_column("size", justify="right", style="dim")
+    table.add_column("", style="dim")
+    for position, path in enumerate(stashes, start=1):
+        table.add_row(
+            str(position),
+            path.stem,
+            f"{path.stat().st_size} bytes",
+            "encrypted" if path.suffix == ".enc" else "plaintext",
+        )
+    console.print(table)
+    console.print(f"[dim]`{escape(cmd('recover <n>'))}` to read one[/dim]")
+
+
+def print_discarded_text(path: Path, text: str) -> None:
+    console.print(Panel(escape(text), title=escape(path.name), expand=False))

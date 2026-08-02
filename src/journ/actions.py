@@ -12,13 +12,14 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
-from journ import analytics, config, content, crypto, mcp_keychain, ui
+from quire.words import count_words, format_elapsed, words_per_minute
+
+from journ import analytics, config, content, crypto, discarded, mcp_keychain, ui
 from journ.builtin_editor import run_builtin_editor
 from journ.content import DecryptedEntry
 from journ.db import Database
 from journ.models import JournalEntry, Profile
 from journ.streak import recompute_streak, update_streak
-from journ.words import count_words, format_elapsed, words_per_minute
 
 
 class PassphraseError(Exception):
@@ -112,6 +113,20 @@ def _encode_entry(text: str, key: bytes | None) -> tuple[bytes, bool]:
     return text.encode("utf-8"), False
 
 
+def _report_discard(
+    text: str, existing_text: str, key: bytes | None, entry_date: date | None = None
+) -> None:
+    """Handle a discarded editor session. Text that was actually written is stashed for
+    recovery rather than destroyed; an untouched editor has nothing worth keeping."""
+    if text == existing_text:
+        print("Discarded. No changes saved.")
+        return
+    path = discarded.stash(text, key, entry_date)
+    print(f"Discarded. Just in case, your text was kept at {path}")
+    if discarded.is_encrypted(path):
+        print(f"It is encrypted -- read it back with `{ui.cmd('recover')}`.")
+
+
 def all_decrypted(
     db: Database, profile: Profile, key: bytes | None, entries: list[JournalEntry] | None = None
 ) -> list[DecryptedEntry]:
@@ -194,8 +209,8 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
         # Held in memory only -- unlike the external-editor path below, this never writes
         # plaintext to disk.
         result = run_builtin_editor(existing_text, profile.writing_goal, initial_private)
-        if result is None:
-            print("Discarded. No changes saved.")
+        if not result.saved:
+            _report_discard(result.text, existing_text, key)
             return
         text = result.text
         is_private = result.private
@@ -316,8 +331,8 @@ def edit_entry(db: Database, entry_date: date, private: bool | None = None) -> N
         result = run_builtin_editor(
             existing_text, profile.writing_goal, initial_private, entry_date=entry_date
         )
-        if result is None:
-            print("Discarded. No changes saved.")
+        if not result.saved:
+            _report_discard(result.text, existing_text, key, entry_date=entry_date)
             return
         text = result.text
         is_private = result.private
@@ -975,3 +990,37 @@ def export_journal(
         text = content.format_json(decrypted)
     output_path.write_text(text, encoding="utf-8")
     print(f"Exported {len(decrypted)} entries to {output_path}")
+
+
+def recover_discarded(db: Database, which: int | None = None) -> None:
+    """List recovery copies of discarded editor text, or print one.
+
+    `which` is the position shown by the bare listing, 1 being the most recent. Printing is
+    all this does: what to do with recovered text is the writer's call, and silently
+    reinstating it over a day's entry would be its own kind of data loss.
+    """
+    stashes = discarded.all_stashes()
+    if not stashes:
+        print("No discarded text has been kept.")
+        return
+
+    if which is None:
+        ui.print_discarded_listing(stashes)
+        return
+
+    if not 1 <= which <= len(stashes):
+        print(f"No discarded text no. {which}. There are {len(stashes)}.")
+        return
+
+    path = stashes[which - 1]
+    key = None
+    if discarded.is_encrypted(path):
+        profile, key = ensure_profile(db)
+        if key is None:
+            key = unlock(profile)
+    try:
+        text = discarded.read(path, key)
+    except LookupError as exc:
+        print(str(exc))
+        return
+    ui.print_discarded_text(path, text)

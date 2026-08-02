@@ -1,9 +1,10 @@
 from datetime import date, datetime, timedelta
 
+from quire.words import count_words
+
 from journ import actions, config, crypto
 from journ.builtin_editor import EditorResult
 from journ.models import JournalEntry
-from journ.words import count_words
 
 
 def test_builtin_editor_never_touches_tmp_dir_and_prints_goal_line(
@@ -16,7 +17,7 @@ def test_builtin_editor_never_touches_tmp_dir_and_prints_goal_line(
         actions,
         "run_builtin_editor",
         lambda initial_text, writing_goal, initial_private=False: EditorResult(
-            text="written via builtin", private=initial_private
+            text="written via builtin", private=initial_private, saved=True
         ),
     )
 
@@ -55,7 +56,9 @@ def test_write_persists_word_count_and_started_at(db, monkeypatch):
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text="five whole words here", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text="five whole words here", private=priv, saved=True
+        ),
     )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
@@ -73,7 +76,9 @@ def test_write_today_entry_resume_preserves_started_at(db, monkeypatch):
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text="one two three four", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text="one two three four", private=priv, saved=True
+        ),
     )
     actions.write_today_entry(db)
     first_started_at = db.latest_entry().started_at
@@ -81,7 +86,9 @@ def test_write_today_entry_resume_preserves_started_at(db, monkeypatch):
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text=text + " five six", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text=text + " five six", private=priv, saved=True
+        ),
     )
     actions.write_today_entry(db)
 
@@ -113,7 +120,9 @@ def test_write_today_entry_resume_computes_session_only_wpm_not_cumulative(db, m
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text="one two three four", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text="one two three four", private=priv, saved=True
+        ),
     )
     actions.write_today_entry(db)
 
@@ -131,7 +140,9 @@ def test_write_today_entry_resume_computes_session_only_wpm_not_cumulative(db, m
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text=text + " five six", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text=text + " five six", private=priv, saved=True
+        ),
     )
     actions.write_today_entry(db)
 
@@ -146,14 +157,16 @@ def test_write_today_entry_resume_with_no_new_words_yields_zero_wpm(db, monkeypa
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text="one two three four", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text="one two three four", private=priv, saved=True
+        ),
     )
     actions.write_today_entry(db)
 
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text=text, private=priv),
+        lambda text, goal, priv=False: EditorResult(text=text, private=priv, saved=True),
     )
     actions.write_today_entry(db)
 
@@ -191,7 +204,7 @@ def test_edit_entry_recomputes_word_count_and_replaces_text(db, monkeypatch):
         actions,
         "run_builtin_editor",
         lambda text, goal, priv=False, entry_date=None: EditorResult(
-            text="brand new replacement text here", private=priv
+            text="brand new replacement text here", private=priv, saved=True
         ),
     )
 
@@ -223,7 +236,7 @@ def test_edit_entry_never_touches_wpm_or_started_at(db, monkeypatch):
         actions,
         "run_builtin_editor",
         lambda text, goal, priv=False, entry_date=None: EditorResult(
-            text=text + " a few more words", private=priv
+            text=text + " a few more words", private=priv, saved=True
         ),
     )
 
@@ -242,7 +255,7 @@ def test_edit_entry_backfills_entry_with_no_prior_data(db, monkeypatch):
         actions,
         "run_builtin_editor",
         lambda text, goal, priv=False, entry_date=None: EditorResult(
-            text="a brand new backfilled entry", private=priv
+            text="a brand new backfilled entry", private=priv, saved=True
         ),
     )
 
@@ -286,7 +299,7 @@ def test_edit_entry_reconciles_streak_upward_when_edit_newly_meets_goal(db, monk
         actions,
         "run_builtin_editor",
         lambda text, goal, priv=False, entry_date=None: EditorResult(
-            text="fills the gap nicely", private=priv
+            text="fills the gap nicely", private=priv, saved=True
         ),
     )
 
@@ -314,7 +327,9 @@ def test_edit_entry_reconciles_streak_downward_when_edit_drops_below_goal(db, mo
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False, entry_date=None: EditorResult(text="one", private=priv),
+        lambda text, goal, priv=False, entry_date=None: EditorResult(
+            text="one", private=priv, saved=True
+        ),
     )
 
     actions.edit_entry(db, past)
@@ -340,7 +355,9 @@ def test_edit_entry_preserves_private_flag_by_default_and_override(db, monkeypat
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False, entry_date=None: EditorResult(text="edited", private=priv),
+        lambda text, goal, priv=False, entry_date=None: EditorResult(
+            text="edited", private=priv, saved=True
+        ),
     )
 
     actions.edit_entry(db, past)
@@ -367,7 +384,7 @@ def test_milestone_line_appears_when_threshold_crossed(db, monkeypatch, capsys):
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text="word " * 60, private=priv),
+        lambda text, goal, priv=False: EditorResult(text="word " * 60, private=priv, saved=True),
     )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
@@ -394,7 +411,9 @@ def test_milestone_does_not_reappear_on_unrelated_write(db, monkeypatch, capsys)
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text="a few more words", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text="a few more words", private=priv, saved=True
+        ),
     )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
@@ -416,7 +435,7 @@ def test_write_today_entry_defaults_to_not_private(db, monkeypatch):
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text="some words", private=priv),
+        lambda text, goal, priv=False: EditorResult(text="some words", private=priv, saved=True),
     )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
@@ -442,7 +461,7 @@ def test_write_today_entry_preserves_existing_private_flag_by_default(db, monkey
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text=text + " more", private=priv),
+        lambda text, goal, priv=False: EditorResult(text=text + " more", private=priv, saved=True),
     )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
@@ -468,7 +487,7 @@ def test_write_today_entry_explicit_private_overrides_existing_flag(db, monkeypa
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text=text + " more", private=priv),
+        lambda text, goal, priv=False: EditorResult(text=text + " more", private=priv, saved=True),
     )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
 
@@ -1327,7 +1346,9 @@ def test_save_conversation_entry_and_write_today_entry_do_not_clobber_each_other
     monkeypatch.setattr(
         actions,
         "run_builtin_editor",
-        lambda text, goal, priv=False: EditorResult(text=text + " typed more", private=priv),
+        lambda text, goal, priv=False: EditorResult(
+            text=text + " typed more", private=priv, saved=True
+        ),
     )
     monkeypatch.setattr(actions.config, "get_editor", lambda: config.BUILTIN_EDITOR)
     actions.write_today_entry(db)
