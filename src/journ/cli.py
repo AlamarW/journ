@@ -215,6 +215,27 @@ def on_this_day() -> None:
 
 
 @app.command()
+def history(
+    entry_date: str = typer.Argument(..., help="ISO date (YYYY-MM-DD) of the entry."),
+) -> None:
+    """List earlier versions of a day's entry, newest first."""
+    with _open_db() as db:
+        _run(lambda: actions.show_entry_history(db, date.fromisoformat(entry_date)))
+
+
+@app.command()
+def revert(
+    entry_date: str = typer.Argument(..., help="ISO date (YYYY-MM-DD) of the entry."),
+    version: int = typer.Argument(
+        None, help="Which earlier version, as numbered by `journ history`. Defaults to 1."
+    ),
+) -> None:
+    """Restore an earlier version of an entry. The replaced text is kept, so this is undoable."""
+    with _open_db() as db:
+        _run(lambda: actions.revert_entry(db, date.fromisoformat(entry_date), version))
+
+
+@app.command()
 def recover(
     which: int = typer.Argument(
         None, help="Which discarded text to print, as numbered by a bare `journ recover`."
