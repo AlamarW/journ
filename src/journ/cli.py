@@ -199,6 +199,11 @@ def frequency() -> None:
     with _open_db() as db:
         _run(lambda: actions.show_word_frequency(db))
 
+@app.command()
+def freq() -> None:
+    """Alias for frequency that's just makes using it easier"""
+    frequency()
+
 
 @app.command()
 def search(query: str) -> None:

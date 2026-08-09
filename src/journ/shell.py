@@ -181,6 +181,8 @@ class JournalingShell(cmd.Cmd):
         "Show your most-used words across all entries"
         self._run(lambda: actions.show_word_frequency(self.db))
 
+    do_freq = do_frequency # alias for frequency so that it's not so painful
+
     def do_history(self, line):
         "List earlier versions of a day's entry: 'history 2026-07-01'"
         arg = line.strip()
