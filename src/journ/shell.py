@@ -288,4 +288,8 @@ class JournalingShell(cmd.Cmd):
         "Exit journ"
         return True
 
+    def emptyline(self):
+        "Do nothing on an empty line submission, I don't want it repeating last task"
+        pass
+
     do_EOF = do_exit
