@@ -9,8 +9,11 @@ commands still gets clean, parseable plain text.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
+from quire.words import count_words
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -90,7 +93,7 @@ def print_write_summary(
     milestones: list[tuple[str, int]] = (),
     private: bool = False,
 ) -> None:
-    from journ.words import format_elapsed
+    from quire.words import format_elapsed
 
     lines = []
     if goal_met:
@@ -321,3 +324,76 @@ def print_repl_help(groups: list[tuple[str, list[tuple[str, str]]]]) -> None:
 
     console.print(table)
     console.print("\nType [bold]help <command>[/bold] for more detail on a specific command.")
+
+
+def print_discarded_listing(stashes: list[Path]) -> None:
+    console.print("Discarded text kept for recovery, newest first:")
+    table = Table(show_header=True, header_style="bold", box=None)
+    table.add_column("", justify="right", style="bold")
+    table.add_column("from")
+    table.add_column("size", justify="right", style="dim")
+    table.add_column("", style="dim")
+    for position, path in enumerate(stashes, start=1):
+        table.add_row(
+            str(position),
+            path.stem,
+            f"{path.stat().st_size} bytes",
+            "encrypted" if path.suffix == ".enc" else "plaintext",
+        )
+    console.print(table)
+    console.print(f"[dim]`{escape(cmd('recover <n>'))}` to read one[/dim]")
+
+
+def print_discarded_text(path: Path, text: str) -> None:
+    console.print(Panel(escape(text), title=escape(path.name), expand=False))
+
+
+def _revision_summary(text: str, limit: int = 60) -> str:
+    """A one-line taste of a version, so history can be scanned without opening each one.
+
+    Escaped because this is the writer's own prose: an entry containing "[1]" or "[bold]"
+    would otherwise be read as Rich markup and render as nothing."""
+    flattened = " ".join(text.split())
+    if len(flattened) > limit:
+        flattened = flattened[: limit - 1].rstrip() + "..."
+    return escape(flattened)
+
+
+def print_entry_history(entry_date: date, revisions: list) -> None:
+    if not revisions:
+        console.print(
+            f"No earlier versions of {entry_date.isoformat()}. One is kept each time you "
+            "save over an entry that already had text."
+        )
+        return
+    console.print(f"Earlier versions of {entry_date.isoformat()}, newest first:")
+    table = Table(show_header=True, header_style="bold", box=None)
+    table.add_column("", justify="right", style="bold")
+    # "replaced", not "written": the timestamp and the actor both describe the edit that
+    # displaced this version, not the writing of it.
+    table.add_column("replaced")
+    table.add_column("by", style="dim")
+    table.add_column("words", justify="right", style="dim")
+    table.add_column("starts")
+    for position, revision in enumerate(revisions, start=1):
+        table.add_row(
+            str(position),
+            revision.created_at.strftime("%Y-%m-%d %H:%M"),
+            revision.actor,
+            str(count_words(revision.text)),
+            _revision_summary(revision.text),
+        )
+    console.print(table)
+    console.print(f"[dim]`{escape(cmd('revert <date> [n]'))}` to restore one[/dim]")
+
+
+def print_reverted_entry(entry_date: date, words_before: int, word_count: int) -> None:
+    console.print(
+        Panel(
+            f"Restored an earlier version of {entry_date.isoformat()}\n"
+            f"{words_before} words -> {word_count} words",
+            title="Reverted",
+            expand=False,
+        )
+    )
+    console.print(f"[dim]The replaced text was kept -- `{cmd('history')}` to get it back[/dim]")

@@ -14,7 +14,14 @@ dependencies = [
     "mcp>=1.28.1",
     "keyring>=25.7.0",
     "stop-words>=2018.7.23",
+    "quire",
 ]
+
+# Pinned to a tag rather than a branch so the `git clone && uv tool install .` path in the
+# README resolves the same quire for everyone. For local development against an unreleased
+# quire, override this with: quire = { path = "../quire", editable = true }
+[tool.uv.sources]
+quire = { git = "https://github.com/AlamarW/quire", tag = "v0.1.0" }
 
 [project.urls]
 Homepage = "https://github.com/AlamarW/journ"

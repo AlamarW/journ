@@ -12,13 +12,15 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
-from journ import analytics, config, content, crypto, mcp_keychain, ui
+from quire.revisions import PlainTextCodec
+from quire.words import count_words, format_elapsed, words_per_minute
+
+from journ import analytics, config, content, crypto, discarded, history, mcp_keychain, ui
 from journ.builtin_editor import run_builtin_editor
 from journ.content import DecryptedEntry
 from journ.db import Database
 from journ.models import JournalEntry, Profile
 from journ.streak import recompute_streak, update_streak
-from journ.words import count_words, format_elapsed, words_per_minute
 
 
 class PassphraseError(Exception):
@@ -112,6 +114,20 @@ def _encode_entry(text: str, key: bytes | None) -> tuple[bytes, bool]:
     return text.encode("utf-8"), False
 
 
+def _report_discard(
+    text: str, existing_text: str, key: bytes | None, entry_date: date | None = None
+) -> None:
+    """Handle a discarded editor session. Text that was actually written is stashed for
+    recovery rather than destroyed; an untouched editor has nothing worth keeping."""
+    if text == existing_text:
+        print("Discarded. No changes saved.")
+        return
+    path = discarded.stash(text, key, entry_date)
+    print(f"Discarded. Just in case, your text was kept at {path}")
+    if discarded.is_encrypted(path):
+        print(f"It is encrypted -- read it back with `{ui.cmd('recover')}`.")
+
+
 def all_decrypted(
     db: Database, profile: Profile, key: bytes | None, entries: list[JournalEntry] | None = None
 ) -> list[DecryptedEntry]:
@@ -194,8 +210,8 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
         # Held in memory only -- unlike the external-editor path below, this never writes
         # plaintext to disk.
         result = run_builtin_editor(existing_text, profile.writing_goal, initial_private)
-        if result is None:
-            print("Discarded. No changes saved.")
+        if not result.saved:
+            _report_discard(result.text, existing_text, key)
             return
         text = result.text
         is_private = result.private
@@ -235,6 +251,10 @@ def write_today_entry(db: Database, private: bool | None = None) -> None:
     # save_conversation_entry call) for as long as the user is typing.
     with db.locked_for_write():
         words_before, entries_before = db.aggregate_totals()
+
+        # Inside the lock and before the write: the text being replaced has to be kept
+        # against the same transaction that replaces it.
+        history.record(db, key, today, existing_text, text)
 
         content_bytes, is_encrypted = _encode_entry(text, key)
         db.upsert_entry(
@@ -316,8 +336,8 @@ def edit_entry(db: Database, entry_date: date, private: bool | None = None) -> N
         result = run_builtin_editor(
             existing_text, profile.writing_goal, initial_private, entry_date=entry_date
         )
-        if result is None:
-            print("Discarded. No changes saved.")
+        if not result.saved:
+            _report_discard(result.text, existing_text, key, entry_date=entry_date)
             return
         text = result.text
         is_private = result.private
@@ -351,6 +371,8 @@ def edit_entry(db: Database, entry_date: date, private: bool | None = None) -> N
 
     with db.locked_for_write():
         words_before, entries_before = db.aggregate_totals()
+
+        history.record(db, key, entry_date, existing_text, text)
 
         content_bytes, is_encrypted = _encode_entry(text, key)
         db.upsert_entry(
@@ -486,6 +508,9 @@ def save_conversation_entry(
         )
 
         words_before, entries_before = db.aggregate_totals()
+        # Attributed to the agent: what makes this worth recording is being able to see
+        # later that an assistant, not you, was what last changed the day's entry.
+        history.record(db, key, entry_date, existing_text, full_text, actor=history.AGENT)
         content_bytes, is_encrypted = _encode_entry(full_text, key)
         db.upsert_entry(
             JournalEntry(
@@ -653,6 +678,11 @@ def _reencrypt_all(
         text = _decode_entry(db, entry, old_key)
         content_bytes, is_encrypted = _encode_entry(text, new_key)
         db.upsert_entry(replace(entry, content=content_bytes, is_encrypted=is_encrypted))
+    # Revisions rotate with the entries. Left behind under the old key they would still
+    # decode as "fernet" and fail on the key itself, so history would break silently and
+    # unrecoverably rather than reporting a missing codec.
+    new_codec = history.FernetCodec(new_key) if new_key is not None else PlainTextCodec()
+    history.store(db, old_key).reencode(new_codec)
     db.set_passphrase(new_salt, new_canary)
 
 
@@ -975,3 +1005,99 @@ def export_journal(
         text = content.format_json(decrypted)
     output_path.write_text(text, encoding="utf-8")
     print(f"Exported {len(decrypted)} entries to {output_path}")
+
+
+def recover_discarded(db: Database, which: int | None = None) -> None:
+    """List recovery copies of discarded editor text, or print one.
+
+    `which` is the position shown by the bare listing, 1 being the most recent. Printing is
+    all this does: what to do with recovered text is the writer's call, and silently
+    reinstating it over a day's entry would be its own kind of data loss.
+    """
+    stashes = discarded.all_stashes()
+    if not stashes:
+        print("No discarded text has been kept.")
+        return
+
+    if which is None:
+        ui.print_discarded_listing(stashes)
+        return
+
+    if not 1 <= which <= len(stashes):
+        print(f"No discarded text no. {which}. There are {len(stashes)}.")
+        return
+
+    path = stashes[which - 1]
+    key = None
+    if discarded.is_encrypted(path):
+        profile, key = ensure_profile(db)
+        if key is None:
+            key = unlock(profile)
+    try:
+        text = discarded.read(path, key)
+    except LookupError as exc:
+        print(str(exc))
+        return
+    ui.print_discarded_text(path, text)
+
+
+def show_entry_history(db: Database, entry_date: date) -> None:
+    """List earlier versions of one day's entry."""
+    profile, key = ensure_profile(db)
+    if key is None:
+        key = unlock(profile)
+    ui.print_entry_history(entry_date, history.history(db, key, entry_date))
+
+
+def revert_entry(db: Database, entry_date: date, which: int | None = None) -> None:
+    """Restore an earlier version of an entry's text.
+
+    `which` is the position shown by `journ history`, 1 being the most recent. The text
+    being replaced is kept, so a revert can itself be reverted.
+
+    The streak is fully reconciled afterwards for the same reason edit_entry reconciles it:
+    restoring a shorter version can drop a day below its goal (breaking a run) and restoring
+    a longer one can newly meet it. Words-per-minute and started_at are carried over
+    untouched -- no writing session happened here.
+    """
+    profile, key = ensure_profile(db)
+    if key is None:
+        key = unlock(profile)
+
+    existing = db.get_entry(entry_date)
+    if existing is None:
+        print(f"No entry for {entry_date.isoformat()}.")
+        return
+
+    revisions = history.history(db, key, entry_date)
+    if not revisions:
+        print(f"No earlier versions of {entry_date.isoformat()} to revert to.")
+        return
+
+    position = 1 if which is None else which
+    if not 1 <= position <= len(revisions):
+        print(f"No version {position} for {entry_date.isoformat()}. There are {len(revisions)}.")
+        return
+
+    existing_text = _decode_entry(db, existing, key)
+    words_before = count_words(existing_text)
+
+    with db.locked_for_write():
+        text = history.store(db, key).revert(
+            history.entry_target(entry_date), revisions[position - 1].id, existing_text
+        )
+        word_count = count_words(text)
+        content_bytes, is_encrypted = _encode_entry(text, key)
+        db.upsert_entry(
+            replace(
+                existing,
+                content=content_bytes,
+                is_encrypted=is_encrypted,
+                word_count=word_count,
+                accomplished_goal=word_count >= profile.writing_goal,
+                updated_at=datetime.now().isoformat(),
+            )
+        )
+        reconcile_streak(db)
+
+    ui.print_reverted_entry(entry_date, words_before, word_count)

@@ -216,7 +216,7 @@ async def test_edit_hands_off_and_redisplays_updated_entry(db, monkeypatch):
         actions,
         "run_builtin_editor",
         lambda text, goal, priv=False, entry_date=None: EditorResult(
-            text="edited text", private=priv
+            text="edited text", private=priv, saved=True
         ),
     )
 
