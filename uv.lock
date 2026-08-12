@@ -391,7 +391,7 @@ requires-dist = [
     { name = "keyring", specifier = ">=25.7.0" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "pyreadline3", marker = "sys_platform == 'win32'" },
-    { name = "quire", git = "https://github.com/AlamarW/quire?tag=v0.1.0" },
+    { name = "quire", git = "https://github.com/AlamarW/quire?tag=v0.1.1" },
     { name = "rich", specifier = ">=13" },
     { name = "stop-words", specifier = ">=2018.7.23" },
     { name = "textual", specifier = ">=0.80" },
@@ -814,7 +814,7 @@ wheels = [
 [[package]]
 name = "quire"
 version = "0.1.0"
-source = { git = "https://github.com/AlamarW/quire?tag=v0.1.0#239dc1939ed979436f9de1f3f2c749257451e6ba" }
+source = { git = "https://github.com/AlamarW/quire?tag=v0.1.1#cec32d8d76609ad33c773b980addba7c74be43c9" }
 dependencies = [
     { name = "textual" },
 ]
