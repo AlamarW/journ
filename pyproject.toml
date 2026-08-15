@@ -21,7 +21,7 @@ dependencies = [
 # README resolves the same quire for everyone. For local development against an unreleased
 # quire, override this with: quire = { path = "../quire", editable = true }
 [tool.uv.sources]
-quire = { git = "https://github.com/AlamarW/quire", tag = "v0.1.1" }
+quire = { git = "https://github.com/AlamarW/quire", branch = "main" }
 
 [project.urls]
 Homepage = "https://github.com/AlamarW/journ"
